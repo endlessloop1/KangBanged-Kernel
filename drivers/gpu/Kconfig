@@ -47,7 +47,7 @@ endif
 if MSM_KGSL_ADRENO220
 source "drivers/gpu/msm_adreno220/Kconfig"
 endif
-
-if MSM_KGSL_ADRENO225
-source "drivers/gpu/msm/Kconfig"
-endif
+#
+#if MSM_KGSL_ADRENO225
+#source "drivers/gpu/msm/Kconfig"
+#endif
