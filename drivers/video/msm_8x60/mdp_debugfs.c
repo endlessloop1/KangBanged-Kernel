@@ -42,15 +42,11 @@
 #ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL
 #include "hdmi_msm.h"
 #endif
-#include "mipi_dsi.h"
 
 #define MDP_DEBUG_BUF	2048
 
 static uint32	mdp_offset;
 static uint32	mdp_count;
-
-static uint32	mipi_offset;
-static uint32	mipi_count;
 
 static char	debug_buf[MDP_DEBUG_BUF];
 
@@ -163,6 +159,9 @@ static ssize_t mdp_reg_write(
 	debug_buf[count] = 0;	/* end of string */
 
 	cnt = sscanf(debug_buf, "%x %x", &off, &data);
+
+	if (cnt != 2)
+		return -EINVAL;
 
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 	outpdw(MDP_BASE + off, data);
@@ -552,6 +551,9 @@ static ssize_t pmdh_reg_write(
 
 	cnt = sscanf(debug_buf, "%x %x", &off, &data);
 
+	if (cnt != 2)
+		return -EINVAL;
+
 	mddi_reg_write(0, off, data);
 
 	return count;
@@ -588,236 +590,7 @@ static const struct file_operations pmdh_fops = {
 	.write = pmdh_reg_write,
 };
 
-static int mipi_reg_open(struct inode *inode, struct file *file)
-{
-	/* non-seekable */
-	file->f_mode &= ~(FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE);
-	return 0;
-}
 
-static int mipi_reg_release(struct inode *inode, struct file *file)
-{
-	return 0;
-}
-
-static ssize_t mipi_reg_write(
-	struct file *file,
-	const char __user *buff,
-	size_t count,
-	loff_t *ppos)
-{
-	uint32 off, data;
-	int cnt;
-
-	if (count >= sizeof(debug_buf))
-		return -EFAULT;
-
-	if (copy_from_user(debug_buf, buff, count))
-		return -EFAULT;
-
-	debug_buf[count] = 0;	/* end of string */
-
-	cnt = sscanf(debug_buf, "%x %x", &off, &data);
-
-	outpdw(MIPI_DSI_BASE + off, data);
-	wmb();
-
-	printk(KERN_INFO "%s: addr=%x data=%x\n", __func__, off, data);
-
-	return count;
-}
-
-static ssize_t mipi_reg_read(
-	struct file *file,
-	char __user *buff,
-	size_t count,
-	loff_t *ppos)
-{
-	int len = 0;
-	uint32 data;
-	int i, j, off, dlen, num;
-	char *bp, *cp;
-	int tot = 0;
-
-
-	if (*ppos)
-		return 0;	/* the end */
-
-	j = 0;
-	num = 0;
-	bp = debug_buf;
-	cp = MIPI_DSI_BASE + mipi_offset;
-	dlen = sizeof(debug_buf);
-
-	while (j++ < 8) {
-		len = snprintf(bp, dlen, "0x%08x: ", (int)cp);
-		tot += len;
-		bp += len;
-		dlen -= len;
-		off = 0;
-		i = 0;
-		while (i++ < 4) {
-			data = inpdw(cp + off);
-			rmb();
-			len = snprintf(bp, dlen, "%08x ", data);
-			tot += len;
-			bp += len;
-			dlen -= len;
-			off += 4;
-			num++;
-			if (num >= mipi_count)
-				break;
-		}
-		*bp++ = '\n';
-		--dlen;
-		tot++;
-		cp += off;
-		if (num >= mipi_count)
-			break;
-	}
-
-	*bp = 0;
-	tot++;
-
-	if (copy_to_user(buff, debug_buf, tot))
-		return -EFAULT;
-
-	*ppos += tot;	/* increase offset */
-
-	return tot;
-}
-
-static const struct file_operations mipi_reg_fops = {
-	.open = mipi_reg_open,
-	.release = mipi_reg_release,
-	.read = mipi_reg_read,
-	.write = mipi_reg_write,
-};
-
-static int mipi_offset_open(struct inode *inode, struct file *file)
-{
-	/* non-seekable */
-	file->f_mode &= ~(FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE);
-	return 0;
-}
-
-static int mipi_offset_release(struct inode *inode, struct file *file)
-{
-	return 0;
-}
-
-static ssize_t mipi_offset_write(
-	struct file *file,
-	const char __user *buff,
-	size_t count,
-	loff_t *ppos)
-{
-	uint32 off, cnt;
-
-	if (count >= sizeof(debug_buf))
-		return -EFAULT;
-
-	if (copy_from_user(debug_buf, buff, count))
-		return -EFAULT;
-
-	debug_buf[count] = 0;	/* end of string */
-
-	sscanf(debug_buf, "%x %d", &off, &cnt);
-
-	if (cnt <= 0)
-		cnt = 1;
-
-	mipi_offset = off;
-	mipi_count = cnt;
-
-	printk(KERN_INFO "%s: offset=%x cnt=%d\n", __func__,
-				mipi_offset, mipi_count);
-
-	return count;
-}
-
-static ssize_t mipi_offset_read(
-	struct file *file,
-	char __user *buff,
-	size_t count,
-	loff_t *ppos)
-{
-	int len = 0;
-
-
-	if (*ppos)
-		return 0;	/* the end */
-
-	len = snprintf(debug_buf, sizeof(debug_buf), "0x%08x %d\n",
-					mipi_offset, mipi_count);
-	if (len < 0)
-		return 0;
-
-	if (copy_to_user(buff, debug_buf, len))
-		return -EFAULT;
-
-	*ppos += len;	/* increase offset */
-
-	return len;
-}
-
-static const struct file_operations mipi_off_fops = {
-	.open = mipi_offset_open,
-	.release = mipi_offset_release,
-	.read = mipi_offset_read,
-	.write = mipi_offset_write,
-};
-
-static int mipi_reset_open(struct inode *inode, struct file *file)
-{
-	/* non-seekable */
-	file->f_mode &= ~(FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE);
-	return 0;
-}
-
-static int mipi_reset_release(struct inode *inode, struct file *file)
-{
-	return 0;
-}
-
-static ssize_t mipi_reset_write(
-	struct file *file,
-	const char __user *buff,
-	size_t count,
-	loff_t *ppos)
-{
-	uint32 on;
-
-	if (count >= sizeof(debug_buf))
-		return -EFAULT;
-
-	if (copy_from_user(debug_buf, buff, count))
-		return -EFAULT;
-
-	debug_buf[count] = 0;	/* end of string */
-
-	/* actually anything can trigger the reset... added for future extension */
-	sscanf(debug_buf, "%d", &on);
-
-	dsi_cmd_lock();
-	dsi_mutex_lock();
-	dsi_busy_check();
-
-	mipi_dsi_controller_cfg(0, 0, 0);
-	msleep(1);
-	mipi_dsi_controller_cfg(1, 0, 0);
-
-	dsi_mutex_unlock();
-	dsi_cmd_unlock();
-
-	return 0;
-}
-
-static const struct file_operations mipi_reset_fops = {
-	.open = mipi_reset_open,
-	.release = mipi_reset_release,
-	.write = mipi_reset_write,
-};
 
 #if defined(CONFIG_FB_MSM_OVERLAY) && defined(CONFIG_FB_MSM_MDDI)
 static int vsync_reg_open(struct inode *inode, struct file *file)
@@ -913,6 +686,9 @@ static ssize_t emdh_reg_write(
 	debug_buf[count] = 0;	/* end of string */
 
 	cnt = sscanf(debug_buf, "%x %x", &off, &data);
+
+	if (cnt != 2)
+		return -EINVAL;
 
 	mddi_reg_write(1, off, data);
 
@@ -1124,6 +900,9 @@ static ssize_t dbg_reg_write(
 	debug_buf[count] = 0;	/* end of string */
 
 	cnt = sscanf(debug_buf, "%x %x", &off, &data);
+
+	if (cnt != 2)
+		return -EINVAL;
 
 	writel(data, dbg_base + off);
 	wmb();
@@ -1516,29 +1295,6 @@ int mdp_debugfs_init(void)
 		return -ENOENT;
 	}
 #endif
-
-	dent = debugfs_create_dir("mipi", NULL);
-
-	if (debugfs_create_file("off", 0644, dent, 0, &mipi_off_fops)
-			== NULL) {
-		printk(KERN_ERR "%s(%d): debugfs_create_file: index fail\n",
-			__FILE__, __LINE__);
-		return -1;
-	}
-
-	if (debugfs_create_file("reg", 0644, dent, 0, &mipi_reg_fops)
-			== NULL) {
-		printk(KERN_ERR "%s(%d): debugfs_create_file: debug fail\n",
-			__FILE__, __LINE__);
-		return -1;
-	}
-
-	if (debugfs_create_file("reset", 0644, dent, 0, &mipi_reset_fops)
-			== NULL) {
-		printk(KERN_ERR "%s(%d): debugfs_create_file: debug fail\n",
-			__FILE__, __LINE__);
-		return -1;
-	}
 
 	return 0;
 }

@@ -38,9 +38,6 @@
 #include "mdp.h"
 #include "msm_fb.h"
 
-extern spinlock_t mdp_spin_lock;
-extern uint32 mdp_intr_mask;
-
 int mdp_dma3_on(struct platform_device *pdev)
 {
 	struct msm_fb_data_type *mfd;

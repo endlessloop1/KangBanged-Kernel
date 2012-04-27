@@ -102,11 +102,11 @@ typedef unsigned int boolean;
 #define MSM_FB_ENABLE_DBGFS
 #define FEATURE_MDDI
 
-#if defined(CONFIG_FB_MSM_DEFAULT_DEPTH_RGB565)
+#if defined(CONFIG_FB_MSM_8X60_DEFAULT_DEPTH_RGB565)
 #define MSMFB_DEFAULT_TYPE MDP_RGB_565
-#elif defined(CONFIG_FB_MSM_DEFAULT_DEPTH_ARGB8888)
+#elif defined(CONFIG_FB_MSM_8X60_DEFAULT_DEPTH_ARGB8888)
 #define MSMFB_DEFAULT_TYPE MDP_ARGB_8888
-#elif defined(CONFIG_FB_MSM_DEFAULT_DEPTH_RGBA8888)
+#elif defined(CONFIG_FB_MSM_8X60_DEFAULT_DEPTH_RGBA8888)
 #define MSMFB_DEFAULT_TYPE MDP_RGBA_8888
 #else
 #define MSMFB_DEFAULT_TYPE MDP_RGB_565
@@ -118,11 +118,11 @@ typedef unsigned int boolean;
 #define outp(addr, val) outp32(addr, val)
 
 #ifndef MAX
-#define  MAX( x, y ) (((x) > (y)) ? (x) : (y))
+#define  MAX(x, y) (((x) > (y)) ? (x) : (y))
 #endif
 
 #ifndef MIN
-#define  MIN( x, y ) (((x) < (y)) ? (x) : (y))
+#define  MIN(x, y) (((x) < (y)) ? (x) : (y))
 #endif
 
 /*--------------------------------------------------------------------------*/
@@ -143,7 +143,7 @@ typedef unsigned int boolean;
 #define memory_barrier()
 
 #define assert(expr) \
-	if(!(expr)) { \
+	if (!(expr)) { \
 		printk(KERN_ERR "msm_fb: assertion failed! %s,%s,%s,line=%d\n",\
 			#expr, __FILE__, __func__, __LINE__); \
 	}

@@ -15,9 +15,9 @@
  *
  *****************************************************************************/
 
-void 	SiiMhlTxInitialize( bool interruptDriven, uint8_t pollIntervalMs );
+void 	SiiMhlTxInitialize(bool interruptDriven, uint8_t pollIntervalMs);
 
-void SiiMhlTxGetEvents( uint8_t *event, uint8_t *eventParameter );
+void SiiMhlTxGetEvents(uint8_t *event, uint8_t *eventParameter);
 #define		MHL_TX_EVENT_NONE		0x00
 #define		MHL_TX_EVENT_DISCONNECTION	0x01
 #define		MHL_TX_EVENT_CONNECTION		0x02
@@ -25,11 +25,11 @@ void SiiMhlTxGetEvents( uint8_t *event, uint8_t *eventParameter );
 #define		MHL_TX_EVENT_RCP_RECEIVED	0x04
 #define		MHL_TX_EVENT_RCPK_RECEIVED	0x05
 #define		MHL_TX_EVENT_RCPE_RECEIVED	0x06
-void 	SiiMhlTxDeviceIsr( void );
-bool SiiMhlTxRcpSend( uint8_t rcpKeyCode );
-bool SiiMhlTxRcpkSend( uint8_t rcpKeyCode );
-bool SiiMhlTxRcpeSend( uint8_t rcpeErrorCode );
-extern	void	AppMhlTxDisableInterrupts( void );
-extern	void	AppMhlTxRestoreInterrupts( void );
-extern	void	AppVbusControl( bool powerOn );
+void 	SiiMhlTxDeviceIsr(void);
+bool SiiMhlTxRcpSend(uint8_t rcpKeyCode);
+bool SiiMhlTxRcpkSend(uint8_t rcpKeyCode);
+bool SiiMhlTxRcpeSend(uint8_t rcpeErrorCode);
+extern	void	AppMhlTxDisableInterrupts(void);
+extern	void	AppMhlTxRestoreInterrupts(void);
+extern	void	AppVbusControl(bool powerOn);
 

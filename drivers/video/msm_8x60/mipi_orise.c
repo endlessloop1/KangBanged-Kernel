@@ -22,43 +22,30 @@
 #include "msm_fb.h"
 #include "mipi_dsi.h"
 #include "mipi_orise.h"
+#include <mach/debug_display.h>
 
-//#define HTC_USED_0_3_MIPI_INIT
-//#define MIPI_READ_DISPLAY_ID	1
-// -----------------------------------------------------------------------------
-//                             Constant value define
-// -----------------------------------------------------------------------------
+/*#define HTC_USED_0_3_MIPI_INIT*/
+/*#define MIPI_READ_DISPLAY_ID	1*/
 
+/*
+ *  Constant value define
+ */
 
-
-// -----------------------------------------------------------------------------
-//                         External routine declaration
-// -----------------------------------------------------------------------------
-static struct perf_lock orise_perf_lock;
-extern int mipi_status;
 #define DEFAULT_BRIGHTNESS 83
-extern int bl_level_prevset;
-extern struct mutex cmdlock;
-extern struct dsi_cmd_desc *mipi_power_on_cmd;
-extern struct dsi_cmd_desc *mipi_power_off_cmd;
-extern int mipi_power_on_cmd_size;
-extern int mipi_power_off_cmd_size;
-extern char ptype[60];
+
+static struct perf_lock orise_perf_lock;
 
 static struct msm_panel_common_pdata *mipi_orise_pdata;
 
 static struct dsi_buf orise_tx_buf;
 static struct dsi_buf orise_rx_buf;
 
-static unsigned char va1[4] ={0x00, 0xe0}; /* DTYPE_DCS_WRITE1 */
-static unsigned char va2[4] ={0xc5, 0x61}; /* DTYPE_DCS_WRITE1 */
-//static unsigned char va3[4]  ={0xc5, 0x01}; /* DTYPE_DCS_WRITE1 */
+static unsigned char va1[4] = {0x00, 0xe0}; /* DTYPE_DCS_WRITE1 */
+static unsigned char va2[4] = {0xc5, 0x61}; /* DTYPE_DCS_WRITE1 */
 
-static unsigned char led_pwm1[] = {0x51, 0x00}; /* DTYPE_DCS_WRITE1 *///PWM
-//static unsigned char led_pwm2[] = {0x53, 0x24};/* DTYPE_DCS_WRITE1 *///bkl on and no dim
-//static unsigned char led_pwm3[] = {0x55, 0x00};/* DTYPE_DCS_WRITE1 *///CABC off
-static unsigned char bkl_enable_cmds[] = {0x53, 0x24};/* DTYPE_DCS_WRITE1 *///bkl on and no dim
-static unsigned char bkl_disable_cmds[] = {0x53, 0x00};/* DTYPE_DCS_WRITE1 *///bkl off
+static unsigned char led_pwm1[] = {0x51, 0x00}; /* DTYPE_DCS_WRITE1, PWM*/
+static unsigned char bkl_enable_cmds[] = {0x53, 0x24};/* DTYPE_DCS_WRITE1, bkl on and no dim */
+static unsigned char bkl_disable_cmds[] = {0x53, 0x00};/* DTYPE_DCS_WRITE1, bkl off */
 
 static unsigned char pwm_freq_sel_cmds1[] = {0x00, 0xB4}; /* address shift to pwm_freq_sel */
 static unsigned char pwm_freq_sel_cmds2[] = {0xC6, 0x00}; /* CABC command with parameter 0 */
@@ -66,7 +53,7 @@ static unsigned char pwm_freq_sel_cmds2[] = {0xC6, 0x00}; /* CABC command with p
 static unsigned char pwm_dbf_cmds1[] = {0x00, 0xB1}; /* address shift to PWM DBF */
 static unsigned char pwm_dbf_cmds2[] = {0xC6, 0x04}; /* CABC command-- DBF: [2:1], force duty: [0] */
 
-static unsigned char pwm_gate1[] = {0x00, 0x80}; /* DTYPE_DCS_WRITE1 */ //addr:0xc680, val:0xf4
+static unsigned char pwm_gate1[] = {0x00, 0x80}; /* DTYPE_DCS_WRITE1 */ /* addr:0xc680, val:0xf4 */
 static unsigned char pwm_gate2[] = {0xc6, 0xF4}; /* DTYPE_DCS_WRITE1 */
 
 /* disable video mdoe */
@@ -76,107 +63,104 @@ static unsigned char no_video_mode2[] = {0xB0, 0xB7};
 static unsigned char no_wait_te1[] = {0x00, 0xA0};
 static unsigned char no_wait_te2[] = {0xC1, 0x00};
 
-static char engmod_1[] = { 	0xFF, 0x96, 0x01, 0x01 }; /* DTYPE_DCS_LWRITE */
+static char engmod_1[] = {0xFF, 0x96, 0x01, 0x01}; /* DTYPE_DCS_LWRITE */
 
-static unsigned char engmod_2[] ={0x00, 0x80 }; /* DTYPE_DCS_WRITE1 */
+static unsigned char engmod_2[] = {0x00, 0x80}; /* DTYPE_DCS_WRITE1 */
 
-static char engmod_3[] = { 	0xFF, 0x96, 0x01, 0xFF }; /* DTYPE_DCS_LWRITE */
-
-//static unsigned char engmod_4[4] ={0x00, 0xA1}; /* DTYPE_DCS_WRITE1 */
-//static unsigned char engmod_5[4] ={0xC5, 0x0A}; /* DTYPE_DCS_WRITE1 */
+static char engmod_3[] = {0xFF, 0x96, 0x01, 0xFF}; /* DTYPE_DCS_LWRITE */
 
 static char sw_reset[] = {0x01, 0x00}; /* DTYPE_DCS_WRITE */
 static char exit_sleep[] = {0x11, 0x00}; /* DTYPE_DCS_WRITE */
 static char display_on[] = {0x29, 0x00}; /* DTYPE_DCS_WRITE */
 
 static char enable_te[] = {0x35, 0x00}; /* DTYPE_DCS_WRITE1 */
-//0x01, 0x68: 3/8 of QHD screen
+/* 0x01, 0x68: 3/8 of QHD screen */
 static char set_tear_line[] = {0x44, 0x01, 0x68};/* DTYPE_DCS_LWRITE */
 
 static char enter_sleep[] = {0x10, 0x00}; /* DTYPE_DCS_WRITE */
 static char display_off[] = {0x28, 0x00}; /* DTYPE_DCS_WRITE */
 
-//auo
+/* auo */
 static char auo_orise_001[] = {
 	0xFF, 0x96, 0x01, 0x01,
 }; /* DTYPE_DCS_LWRITE */
-static unsigned char auo_orise_002[] ={0x00, 0x80}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_002[] = {0x00, 0x80}; /* DTYPE_DCS_WRITE1 */
 static char auo_orise_003[] = {
 	0xFF, 0x96, 0x01, 0xff,
 }; /* DTYPE_DCS_LWRITE */
-static unsigned char auo_orise_004[] ={0x00, 0x81}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_005[] ={0xaa, 0x00}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_006[] ={0x00, 0xa0}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_007[] ={0xb3, 0x38}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_008[] ={0x00, 0xa1}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_009[] ={0xb3, 0x18}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_010[] ={0x00, 0xa2}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_011[] ={0xb3, 0x02}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_012[] ={0x00, 0xa3}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_013[] ={0xb3, 0x1c}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_014[] ={0x00, 0xa4}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_015[] ={0xb3, 0x03}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_016[] ={0x00, 0xa5}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_017[] ={0xb3, 0xc0}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_c2_01[]  ={0x00, 0xa1}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_c2_02[]  ={0xc0, 0x02}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_018[] ={0x00, 0xb3}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_019[] ={0xc0, 0x10}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_020[] ={0x00, 0x80}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_021[] ={0xc2, 0x00}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_022[] ={0x00, 0x81}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_023[] ={0xc2, 0x01}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_024[] ={0x00, 0x85}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_025[] ={0xc2, 0x01}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_026[] ={0x00, 0x86}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_027[] ={0xc2, 0x00}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_028[] ={0x00, 0x87}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_029[] ={0xc2, 0x00}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_030[] ={0x00, 0x90}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_031[] ={0xc2, 0x00}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_032[] ={0x00, 0x91}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_033[] ={0xc2, 0x00}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_034[] ={0x00, 0x92}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_035[] ={0xc2, 0x18}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_036[] ={0x00, 0x93}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_037[] ={0xc2, 0x02}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_c2_03[]  ={0x00, 0xc0}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_c2_04[]  ={0xc2, 0xa0}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_038[] ={0x00, 0xc3}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_039[] ={0xc2, 0x02}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_040[] ={0x00, 0xc4}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_041[] ={0xc2, 0x0d}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_042[] ={0x00, 0x80}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_043[] ={0xc5, 0x23}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_044[] ={0x00, 0x82}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_045[] ={0xc5, 0x07}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_046[] ={0x00, 0xa3}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_047[] ={0xc5, 0x55}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_047_c2[] ={0xc5, 0x44}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_048[]={0x00, 0xa0}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_049[] ={0xc5, 0xf9}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_050[] ={0x00, 0xa1}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_051[] ={0xc5, 0x5e}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_051_c3[] ={0xc5, 0x6e}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_052[] ={0x00, 0xa2}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_053[] ={0xc5, 0xbf}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_054[] ={0x00, 0xa6}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_055[] ={0xc5, 0x14}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_056[] ={0x00, 0x85}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_057[] ={0xc5, 0x00}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_058[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_004[] = {0x00, 0x81}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_005[] = {0xaa, 0x00}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_006[] = {0x00, 0xa0}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_007[] = {0xb3, 0x38}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_008[] = {0x00, 0xa1}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_009[] = {0xb3, 0x18}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_010[] = {0x00, 0xa2}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_011[] = {0xb3, 0x02}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_012[] = {0x00, 0xa3}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_013[] = {0xb3, 0x1c}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_014[] = {0x00, 0xa4}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_015[] = {0xb3, 0x03}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_016[] = {0x00, 0xa5}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_017[] = {0xb3, 0xc0}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_c2_01[]  = {0x00, 0xa1}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_c2_02[]  = {0xc0, 0x02}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_018[] = {0x00, 0xb3}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_019[] = {0xc0, 0x10}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_020[] = {0x00, 0x80}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_021[] = {0xc2, 0x00}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_022[] = {0x00, 0x81}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_023[] = {0xc2, 0x01}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_024[] = {0x00, 0x85}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_025[] = {0xc2, 0x01}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_026[] = {0x00, 0x86}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_027[] = {0xc2, 0x00}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_028[] = {0x00, 0x87}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_029[] = {0xc2, 0x00}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_030[] = {0x00, 0x90}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_031[] = {0xc2, 0x00}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_032[] = {0x00, 0x91}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_033[] = {0xc2, 0x00}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_034[] = {0x00, 0x92}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_035[] = {0xc2, 0x18}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_036[] = {0x00, 0x93}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_037[] = {0xc2, 0x02}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_c2_03[]  = {0x00, 0xc0}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_c2_04[]  = {0xc2, 0xa0}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_038[] = {0x00, 0xc3}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_039[] = {0xc2, 0x02}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_040[] = {0x00, 0xc4}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_041[] = {0xc2, 0x0d}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_042[] = {0x00, 0x80}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_043[] = {0xc5, 0x23}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_044[] = {0x00, 0x82}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_045[] = {0xc5, 0x07}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_046[] = {0x00, 0xa3}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_047[] = {0xc5, 0x55}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_047_c2[] = {0xc5, 0x44}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_048[] = {0x00, 0xa0}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_049[] = {0xc5, 0xf9}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_050[] = {0x00, 0xa1}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_051[] = {0xc5, 0x5e}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_051_c3[] = {0xc5, 0x6e}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_052[] = {0x00, 0xa2}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_053[] = {0xc5, 0xbf}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_054[] = {0x00, 0xa6}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_055[] = {0xc5, 0x14}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_056[] = {0x00, 0x85}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_057[] = {0xc5, 0x00}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_058[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
 static char auo_orise_059[] = {
 	0xd8, 0x78, 0x00, 0x78,
 	0x00, 0xff, 0xff, 0xff,
 }; /* DTYPE_DCS_LWRITE */
-static unsigned char auo_orise_060[] ={0x00, 0xe0}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_061[] ={0xc5, 0x5b}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_061_c3[] ={0xc5, 0x3b}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_062[] ={0x00, 0x83}; /* DTYPE_DCS_WRITE1 */
-static unsigned char auo_orise_063[] ={0xb3, 0x3f}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_060[] = {0x00, 0xe0}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_061[] = {0xc5, 0x5b}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_061_c3[] = {0xc5, 0x3b}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_062[] = {0x00, 0x83}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_orise_063[] = {0xb3, 0x3f}; /* DTYPE_DCS_WRITE1 */
 
-// gamma 2.2
-static unsigned char auo_gamma22_00[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
+/* gamma 2.2 */
+static unsigned char auo_gamma22_00[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
 
 static char auo_gamma22_01[] = {
 	0xe1, 0x00, 0x09, 0x0f,
@@ -235,51 +219,51 @@ static char auo_gamma22_08[] = {
 	0x06, 0xff, 0xff, 0xff,
 }; /* DTYPE_DCS_LWRITE */
 
-static unsigned char auo_gamma22_09[2] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_gamma22_09[2] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
 
-//auo gamma 2.5
-static unsigned char auo_gamma25_00[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
+/*auo gamma 2.5 */
+static unsigned char auo_gamma25_00[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
 
 static unsigned char auo_gamma25_01[] = {
 	0xe1, 0x00, 0x09, 0x10,
-	0x10,0x08,0x10,0x0D,
-	0x0C,0x01,0x05,0x13,
-	0x0F,0x16,0x1D,0x13,
+	0x10, 0x08, 0x10, 0x0D,
+	0x0C, 0x01, 0x05, 0x13,
+	0x0F, 0x16, 0x1D, 0x13,
 	0x06, 0xff, 0xff, 0xff,
 }; /* DTYPE_DCS_LWRITE */
 static unsigned char auo_gamma25_02[] = {
 	0xe2, 0x00, 0x09, 0x10,
-	0x10,0x08,0x10,0x0D,
-	0x0C,0x01,0x05,0x13,
-	0x0F,0x16,0x1D,0x13,
+	0x10, 0x08, 0x10, 0x0D,
+	0x0C, 0x01, 0x05, 0x13,
+	0x0F, 0x16, 0x1D, 0x13,
 	0x06, 0xff, 0xff, 0xff,
 }; /* DTYPE_DCS_LWRITE */
 static unsigned char auo_gamma25_03[] = {
 	0xe3, 0x00, 0x09, 0x10,
-	0x0C,0x05,0x0E,0x0D,
-	0x0C,0x01,0x05,0x11,
-	0x0C,0x15,0x1D,0x13,
+	0x0C, 0x05, 0x0E, 0x0D,
+	0x0C, 0x01, 0x05, 0x11,
+	0x0C, 0x15, 0x1D, 0x13,
 	0x06, 0xff, 0xff, 0xff,
 }; /* DTYPE_DCS_LWRITE */
 static unsigned char auo_gamma25_04[] = {
 	0xe4, 0x00, 0x09, 0x10,
-	0x0C,0x05,0x0E,0x0D,
-	0x0C,0x01,0x05,0x11,
-	0x0C,0x15,0x1D,0x13,
+	0x0C, 0x05, 0x0E, 0x0D,
+	0x0C, 0x01, 0x05, 0x11,
+	0x0C, 0x15, 0x1D, 0x13,
 	0x06, 0xff, 0xff, 0xff,
 }; /* DTYPE_DCS_LWRITE */
 static unsigned char auo_gamma25_05[] = {
 	0xe5, 0x00, 0x09, 0x10,
-	0x10,0x11,0x0E,0x0D,
-	0x0C,0x01,0x05,0x1E,
-	0x14,0x1E,0x00,0x13,
+	0x10, 0x11, 0x0E, 0x0D,
+	0x0C, 0x01, 0x05, 0x1E,
+	0x14, 0x1E, 0x00, 0x13,
 	0x06, 0xff, 0xff, 0xff,
 }; /* DTYPE_DCS_LWRITE */
 static unsigned char auo_gamma25_06[] = {
-	0xE6,0x00,0x09,0x10,
-	0x10,0x11,0x0E,0x0D,
-	0x0C,0x01,0x05,0x1E,
-	0x14,0x1E,0x00,0x13,
+	0xE6, 0x00, 0x09, 0x10,
+	0x10, 0x11, 0x0E, 0x0D,
+	0x0C, 0x01, 0x05, 0x1E,
+	0x14, 0x1E, 0x00, 0x13,
 	0x06, 0xff, 0xff, 0xff,
 }; /* DTYPE_DCS_LWRITE */
 static unsigned char auo_gamma25_07[] = {
@@ -297,19 +281,19 @@ static unsigned char auo_gamma25_08[] = {
 	0x06, 0xff, 0xff, 0xff,
 }; /* DTYPE_DCS_LWRITE */
 
-static unsigned char auo_gamma25_09[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
+static unsigned char auo_gamma25_09[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
 
-static unsigned char sony_orise_001[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 : address shift*/
+static unsigned char sony_orise_001[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 : address shift*/
 static unsigned char sony_orise_002[] = {
 	0xFF, 0x96, 0x01, 0x01,
 }; /* DTYPE_DCS_LWRITE : 0x9600:0x96, 0x9601:0x01, 0x9602:0x01*/
 
-static unsigned char sony_orise_003[] ={0x00, 0x80}; /* DTYPE_DCS_WRITE1 : address shift*/
+static unsigned char sony_orise_003[] = {0x00, 0x80}; /* DTYPE_DCS_WRITE1 : address shift*/
 static unsigned char sony_orise_004[] = {
 	0xFF, 0x96, 0x01,
 }; /* DTYPE_DCS_LWRITE : 0xFF80:0x96, 0xFF81:0x1 */
 
-static unsigned char sony_gamma28_00[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
+static unsigned char sony_gamma28_00[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
 static unsigned char sony_gamma28_01[] = {
 	0xe1, 0x07, 0x15, 0x1b,
 	0x0e, 0x06, 0x0f, 0x0a,
@@ -318,7 +302,7 @@ static unsigned char sony_gamma28_01[] = {
 	0x00
 }; /* DTYPE_DCS_LWRITE :0xE100:0x11, 0xE101:0x19, 0xE102: 0x1e, ..., 0xff are padding for 4 bytes*/
 
-static unsigned char sony_gamma28_02[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
+static unsigned char sony_gamma28_02[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
 static unsigned char sony_gamma28_03[] = {
 	0xe2, 0x07, 0x15, 0x1b,
 	0x0d, 0x06, 0x0f, 0x0a,
@@ -327,7 +311,7 @@ static unsigned char sony_gamma28_03[] = {
 	0x00
 }; /* DTYPE_DCS_LWRITE :0xE200:0x11, 0xE201:0x19, 0xE202: 0x1e, ..., 0xff are padding for 4 bytes*/
 
-static unsigned char sony_gamma28_04[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
+static unsigned char sony_gamma28_04[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
 static unsigned char sony_gamma28_05[] = {
 	0xe3, 0x19, 0x1e, 0x22,
 	0x0c, 0x04, 0x0c, 0x0a,
@@ -336,7 +320,7 @@ static unsigned char sony_gamma28_05[] = {
 	0x00,
 }; /* DTYPE_DCS_LWRITE :0xE200:0x11, 0xE201:0x19, 0xE202: 0x1e, ..., 0xff are padding for 4 bytes*/
 
-static unsigned char sony_gamma28_06[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
+static unsigned char sony_gamma28_06[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
 static unsigned char sony_gamma28_07[] = {
 	0xe4, 0x19, 0x1e, 0x22,
 	0x0c, 0x04, 0x0c, 0x0a,
@@ -345,7 +329,7 @@ static unsigned char sony_gamma28_07[] = {
 	0x00
 }; /* DTYPE_DCS_LWRITE :0xE200:0x11, 0xE201:0x19, 0xE202: 0x1e, ..., 0xff are padding for 4 bytes*/
 
-static unsigned char sony_gamma28_08[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
+static unsigned char sony_gamma28_08[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
 static unsigned char sony_gamma28_09[] = {
 	0xe5, 0x07, 0x12, 0x18,
 	0x0f, 0x07, 0x0f, 0x0b,
@@ -354,7 +338,7 @@ static unsigned char sony_gamma28_09[] = {
 	0x00
 }; /* DTYPE_DCS_LWRITE :0xE200:0x11, 0xE201:0x19, 0xE202: 0x1e, ..., 0xff are padding for 4 bytes*/
 
-static unsigned char sony_gamma28_10[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
+static unsigned char sony_gamma28_10[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 :address shift*/
 static unsigned char sony_gamma28_11[] = {
 	0xe6, 0x07, 0x12, 0x18,
 	0x0f, 0x07, 0x0f, 0x0b,
@@ -362,40 +346,36 @@ static unsigned char sony_gamma28_11[] = {
 	0x04, 0x0b, 0x08, 0x04,
 	0x00
 }; /* DTYPE_DCS_LWRITE :0xE200:0x11, 0xE201:0x19, 0xE202: 0x1e, ..., 0xff are padding for 4 bytes*/
-//NOP
-static unsigned char sony_gamma28_12[] ={0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
+/* NOP */
+static unsigned char sony_gamma28_12[] = {0x00, 0x00}; /* DTYPE_DCS_WRITE1 */
 
 static struct dsi_cmd_desc orise_video_on_cmds[] = {
-//	{DTYPE_DCS_WRITE, 1, 0, 0, 50,	sizeof(sw_reset), sw_reset},
 	{DTYPE_DCS_WRITE, 1, 0, 0, 10,	sizeof(exit_sleep), exit_sleep},
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120,	sizeof(display_on), display_on},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 10,	sizeof(led_pwm1), led_pwm1},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 10,	sizeof(led_pwm2), led_pwm2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 10,	sizeof(led_pwm3), led_pwm3},
 };
 
 static struct dsi_cmd_desc orise_cmd_on_cmds[] = {
-//	{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},*/
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0, sizeof(engmod_1), engmod_1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(engmod_2), engmod_2},
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0, sizeof(engmod_3), engmod_3},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(pwm_gate1), pwm_gate1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(pwm_gate2), pwm_gate2},
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120, sizeof(exit_sleep), exit_sleep},
-	//{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},*/
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(enable_te), enable_te},
 	{DTYPE_MAX_PKTSIZE, 1, 0, 0, 0, sizeof(max_pktsize), max_pktsize},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode1), no_video_mode1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode2), no_video_mode2},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te1), no_wait_te1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te2), no_wait_te2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},*/
 };
 
 static struct dsi_cmd_desc auo_orise_cmd_on_cmds[] = {
-//	{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},*/
 
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0, sizeof(auo_orise_001), auo_orise_001},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(auo_orise_002), auo_orise_002},
@@ -471,20 +451,20 @@ static struct dsi_cmd_desc auo_orise_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(auo_gamma22_09), auo_gamma22_09},
 
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120, sizeof(exit_sleep), exit_sleep},
-	//{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},*/
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(enable_te), enable_te},
 	{DTYPE_MAX_PKTSIZE, 1, 0, 0, 0, sizeof(max_pktsize), max_pktsize},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode1), no_video_mode1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode2), no_video_mode2},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te1), no_wait_te1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te2), no_wait_te2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},*/
 };
 
 static struct dsi_cmd_desc orise_c2_cmd_on_cmds[] = {
-//	{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},*/
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0, sizeof(engmod_1), engmod_1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(engmod_2), engmod_2},
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0, sizeof(engmod_3), engmod_3},
@@ -492,22 +472,22 @@ static struct dsi_cmd_desc orise_c2_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(pwm_gate2), pwm_gate2},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(va1), va1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(va2), va2},
-	//{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(va3), va3},
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(va3), va3},*/
 	{DTYPE_DCS_WRITE, 1, 0, 0, 100, sizeof(exit_sleep), exit_sleep},
-	//{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},*/
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(enable_te), enable_te},
 	{DTYPE_MAX_PKTSIZE, 1, 0, 0, 0, sizeof(max_pktsize), max_pktsize},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode1), no_video_mode1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode2), no_video_mode2},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te1), no_wait_te1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te2), no_wait_te2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},*/
 };
 
 static struct dsi_cmd_desc sony_orise_cmd_on_cmds[] = {
-//	{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},*/
 
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(sony_orise_001), sony_orise_001},
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0, sizeof(sony_orise_002), sony_orise_002},
@@ -528,7 +508,7 @@ static struct dsi_cmd_desc sony_orise_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(sony_gamma28_12), sony_gamma28_12},
 
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120, sizeof(exit_sleep), exit_sleep},
-	//{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},*/
 
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(pwm_freq_sel_cmds1), pwm_freq_sel_cmds1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(pwm_freq_sel_cmds2), pwm_freq_sel_cmds2},
@@ -545,13 +525,13 @@ static struct dsi_cmd_desc sony_orise_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te1), no_wait_te1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te2), no_wait_te2},
 
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},*/
 };
 
 static struct dsi_cmd_desc auo_orise_c2_cmd_on_cmds[] = {
-//	{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},*/
 
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0, sizeof(auo_orise_001), auo_orise_001},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(auo_orise_002), auo_orise_002},
@@ -633,20 +613,20 @@ static struct dsi_cmd_desc auo_orise_c2_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(auo_gamma25_09), auo_gamma25_09},
 
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120, sizeof(exit_sleep), exit_sleep},
-	//{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},*/
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(enable_te), enable_te},
 	{DTYPE_MAX_PKTSIZE, 1, 0, 0, 0, sizeof(max_pktsize), max_pktsize},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode1), no_video_mode1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode2), no_video_mode2},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te1), no_wait_te1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te2), no_wait_te2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},*/
 };
 
 static struct dsi_cmd_desc auo_orise_c3_cmd_on_cmds[] = {
-//	{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},*/
 
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0, sizeof(auo_orise_001), auo_orise_001},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(auo_orise_002), auo_orise_002},
@@ -726,31 +706,31 @@ static struct dsi_cmd_desc auo_orise_c3_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(auo_gamma25_09), auo_gamma25_09},
 
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120, sizeof(exit_sleep), exit_sleep},
-	//{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},*/
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(enable_te), enable_te},
 	{DTYPE_MAX_PKTSIZE, 1, 0, 0, 0, sizeof(max_pktsize), max_pktsize},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode1), no_video_mode1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode2), no_video_mode2},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te1), no_wait_te1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te2), no_wait_te2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},*/
 };
 
 static struct dsi_cmd_desc shp_orise_cmd_on_cmds[] = {
-//	{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},*/
 	{DTYPE_DCS_WRITE, 1, 0, 0, 150, sizeof(exit_sleep), exit_sleep},
-	//{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},
+	/*{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},*/
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(enable_te), enable_te},
 	{DTYPE_MAX_PKTSIZE, 1, 0, 0, 0, sizeof(max_pktsize), max_pktsize},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode1), no_video_mode1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_video_mode2), no_video_mode2},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te1), no_wait_te1},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(no_wait_te2), no_wait_te2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},
-//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm1), led_pwm1},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm2), led_pwm2},*/
+	/*{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(led_pwm3), led_pwm3},*/
 };
 
 
@@ -787,15 +767,15 @@ static uint32 mipi_orise_manufacture_id(void)
 	char *cp;
 
 	cp = (char *)rp->data;
-	printk("rx-data: ");
+	printk(KERN_INFO "rx-data: ");
 	for (i = 0; i < rp->len; i++, cp++)
-		printk("%x ", *cp);
-	printk("\n");
+		printk(KERN_INFO "%x ", *cp);
+	printk(KERN_INFO "\n");
 }
 
 	lp = (uint32 *)rp->data;
 
-	printk("%s: manu_id=%x", __func__, *lp);
+	printk(KERN_INFO "%s: manu_id=%x", __func__, *lp);
 
 	return *lp;
 }
@@ -827,13 +807,15 @@ unsigned char mipi_orise_read_power(void)
 
 	/* periodically check if S/W reset of DSI is necessary */
 	if (1 == mipi_dsi_reset_read()) {
+		struct msm_fb_data_type* rtn_mfd;
+
 		mipi_dsi_reset_set(0);
-		dsi_mutex_lock();
-		dsi_busy_check();
+		rtn_mfd = dsi_mutex_lock();
+		dsi_busy_check(rtn_mfd);
 
-		mipi_dsi_sw_reset();
+		/*mipi_dsi_sw_reset();*/
 
-		dsi_mutex_unlock();
+		dsi_mutex_unlock(rtn_mfd);
 	}
 
 	return *(rp->data);
@@ -845,7 +827,7 @@ static struct dsi_cmd_desc chip_cmd = {
 	DTYPE_DCS_READ, 1, 0, 1, 5,
 		sizeof(read_status), read_status
 };
-static unsigned char* mipi_orise_read_status(void)
+static unsigned char *mipi_orise_read_status(void)
 {
 	struct dsi_buf *tp, *rp;
 	struct dsi_cmd_desc *cmd;
@@ -858,7 +840,7 @@ static unsigned char* mipi_orise_read_status(void)
 	cmd = &chip_cmd;
 	mipi_dsi_cmds_rx(tp, rp, cmd, 4);
 
-	//mipi_dsi_cmds_tx(orise_tx_buf, power_cmd, ARRAY_SIZE(power_cmd));
+	/* mipi_dsi_cmds_tx(orise_tx_buf, power_cmd, ARRAY_SIZE(power_cmd));*/
 
 	{
 		int i;
@@ -871,7 +853,7 @@ static unsigned char* mipi_orise_read_status(void)
 		printk("\n");
 	}
 
-	//lp = (uint32 *)rp->data;
+	/* lp = (uint32 *)rp->data; */
 	return rp->data;
 }
 #endif
@@ -923,66 +905,67 @@ static struct dsi_cmd_desc orise_bkl_disable_cmds[] = {
 		sizeof(bkl_disable_cmds), bkl_disable_cmds},
 };
 
-void mipi_orise_panel_type_detect(void) {
+void mipi_orise_panel_type_detect(void)
+{
 	if (panel_type == PANEL_ID_SHR_SHARP_OTM) {
-		pr_info("%s: panel_type=PANEL_ID_SHR_SHARP_OTM\n", __func__);
-		strcat (ptype,"PANEL_ID_SHR_SHARP_OTM");
+		PR_DISP_INFO("%s: panel_type=PANEL_ID_SHR_SHARP_OTM\n", __func__);
+		strcat(ptype, "PANEL_ID_SHR_SHARP_OTM");
 		mipi_power_on_cmd = orise_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(orise_cmd_on_cmds);
 		mipi_power_off_cmd = orise_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(orise_display_off_cmds);
 	} else if (panel_type == PANEL_ID_RIR_AUO_OTM) {
-		pr_info("%s: panel_type=PANEL_ID_RIR_AUO_OTM\n", __func__);
-		strcat (ptype,"PANEL_ID_RIR_AUO_OTM");
+		PR_DISP_INFO("%s: panel_type=PANEL_ID_RIR_AUO_OTM\n", __func__);
+		strcat(ptype, "PANEL_ID_RIR_AUO_OTM");
 		mipi_power_on_cmd = auo_orise_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(auo_orise_cmd_on_cmds);
 		mipi_power_off_cmd = orise_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(orise_display_off_cmds);
 	} else if (panel_type == PANEL_ID_SHR_SHARP_OTM_C2) {
-		pr_info("%s: panel_type=PANEL_ID_SHR_SHARP_OTM_C2\n", __func__);
-		strcat (ptype,"PANEL_ID_SHR_SHARP_OTM_C2");
+		PR_DISP_INFO("%s: panel_type=PANEL_ID_SHR_SHARP_OTM_C2\n", __func__);
+		strcat(ptype, "PANEL_ID_SHR_SHARP_OTM_C2");
 		mipi_power_on_cmd = orise_c2_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(orise_c2_cmd_on_cmds);
 		mipi_power_off_cmd = orise_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(orise_display_off_cmds);
 	} else if (panel_type == PANEL_ID_HOY_SONY_OTM) {
-		pr_info("%s: panel_type=PANEL_ID_HOY_SONY_OTM\n", __func__);
-		strcat (ptype,"PANEL_ID_HOY_SONY_OTM");
+		PR_DISP_INFO("%s: panel_type=PANEL_ID_HOY_SONY_OTM\n", __func__);
+		strcat(ptype, "PANEL_ID_HOY_SONY_OTM");
 		mipi_power_on_cmd = sony_orise_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(sony_orise_cmd_on_cmds);
 		mipi_power_off_cmd = orise_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(orise_display_off_cmds);
 	} else if (panel_type == PANEL_ID_RIR_AUO_OTM_C2) {
-		pr_info("%s: panel_type=PANEL_ID_RIR_AUO_OTM_C2\n", __func__);
-		strcat (ptype,"PANEL_ID_RIR_AUO_OTM_C2");
+		PR_DISP_INFO("%s: panel_type=PANEL_ID_RIR_AUO_OTM_C2\n", __func__);
+		strcat(ptype, "PANEL_ID_RIR_AUO_OTM_C2");
 		mipi_power_on_cmd = auo_orise_c2_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(auo_orise_c2_cmd_on_cmds);
 		mipi_power_off_cmd = orise_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(orise_display_off_cmds);
 	} else if (panel_type == PANEL_ID_RIR_AUO_OTM_C3) {
-		pr_info("%s: panel_type=PANEL_ID_RIR_AUO_OTM_C3\n", __func__);
-		strcat (ptype,"PANEL_ID_RIR_AUO_OTM_C3");
+		PR_DISP_INFO("%s: panel_type=PANEL_ID_RIR_AUO_OTM_C3\n", __func__);
+		strcat(ptype, "PANEL_ID_RIR_AUO_OTM_C3");
 		mipi_power_on_cmd = auo_orise_c3_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(auo_orise_c3_cmd_on_cmds);
 		mipi_power_off_cmd = orise_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(orise_display_off_cmds);
 	} else if (panel_type == PANEL_ID_RIR_SHARP_OTM) {
-		pr_info("%s: panel_type=PANEL_ID_RIR_SHARP_OTM\n", __func__);
-		strcat (ptype,"PANEL_ID_RIR_SHARP_OTM");
+		PR_DISP_INFO("%s: panel_type=PANEL_ID_RIR_SHARP_OTM\n", __func__);
+		strcat(ptype, "PANEL_ID_RIR_SHARP_OTM");
 		mipi_power_on_cmd = shp_orise_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(shp_orise_cmd_on_cmds);
 		mipi_power_off_cmd = orise_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(orise_display_off_cmds);
-	}
-	else {
-		printk(KERN_ERR "%s: panel_type=0x%x not support\n", __func__, panel_type);
-		strcat (ptype,"PANEL_ID_NONE");
+	} else {
+		PR_DISP_ERR("%s: panel_type=0x%x not support\n", __func__, panel_type);
+		strcat(ptype, "PANEL_ID_NONE");
 	}
 	return;
 }
-// -----------------------------------------------------------------------------
-//                         Common Routine Implementation
-// -----------------------------------------------------------------------------
+
+/*
+ *  Common Routine Implementation
+ */
 static int mipi_orise_lcd_on(struct platform_device *pdev)
 {
 	struct msm_fb_data_type *mfd;
@@ -997,10 +980,10 @@ static int mipi_orise_lcd_on(struct platform_device *pdev)
 		return -EINVAL;
 
 	pdata = (struct msm_fb_panel_data *)mfd->pdev->dev.platform_data;
-	mipi  = &mfd->panel_info.mipi;
+	mipi = &mfd->panel_info.mipi;
 	mutex_lock(&cmdlock);
 	if (init == 0) {
-		if(pdata && pdata->panel_type_detect)
+		if (pdata && pdata->panel_type_detect)
 			pdata->panel_type_detect();
 		init = 1;
 		goto end;
@@ -1009,20 +992,19 @@ static int mipi_orise_lcd_on(struct platform_device *pdev)
 			mipi_dsi_cmds_tx(&orise_tx_buf, orise_video_on_cmds,
 				ARRAY_SIZE(orise_video_on_cmds));
 		} else {
-			if(panel_type != PANEL_ID_NONE) {
-				pr_info("%s\n", ptype);
+			if (panel_type != PANEL_ID_NONE) {
+				PR_DISP_INFO("%s\n", ptype);
 				if (!is_perf_lock_active(&orise_perf_lock))
 					perf_lock(&orise_perf_lock);
 				mipi_dsi_cmds_tx(&orise_tx_buf, mipi_power_on_cmd, mipi_power_on_cmd_size);
 				if (is_perf_lock_active(&orise_perf_lock))
 					perf_unlock(&orise_perf_lock);
-				#ifdef MIPI_READ_DISPLAY_ID /* mipi read command verify */
+#ifdef MIPI_READ_DISPLAY_ID /* mipi read command verify */
 				/* clean up ack_err_status */
 				mipi_dsi_cmd_bta_sw_trigger();
 				mipi_novatek_manufacture_id();
-				#endif
-			}
-			else {
+#endif
+			} else {
 				printk(KERN_ERR "panel_type=0x%x not support at power on\n", panel_type);
 				mutex_unlock(&cmdlock);
 				return -EINVAL;
@@ -1046,15 +1028,14 @@ static int mipi_orise_lcd_off(struct platform_device *pdev)
 		return -EINVAL;
 	mutex_lock(&cmdlock);
 
-	if(panel_type != PANEL_ID_NONE) {
-		pr_info("%s\n", ptype);
+	if (panel_type != PANEL_ID_NONE) {
+		PR_DISP_INFO("%s\n", ptype);
 		if (!is_perf_lock_active(&orise_perf_lock))
 			perf_lock(&orise_perf_lock);
 		mipi_dsi_cmds_tx(&orise_tx_buf, mipi_power_off_cmd, mipi_power_off_cmd_size);
 		if (is_perf_lock_active(&orise_perf_lock))
 			perf_unlock(&orise_perf_lock);
-	}
-	else
+	} else
 		printk(KERN_ERR "panel_type=0x%x not support at power off\n", panel_type);
 
 	mutex_unlock(&cmdlock);
@@ -1068,7 +1049,6 @@ static int mipi_dsi_set_backlight(struct msm_fb_data_type *mfd)
 	mutex_lock(&cmdlock);
 
 	mipi  = &mfd->panel_info.mipi;
-	pr_debug("%s+:bl=%d status=%d\n", __func__, mfd->bl_level, mipi_status);
 	if (mipi_status == 0)
 		goto end;
 	if (mipi_orise_pdata && mipi_orise_pdata->shrink_pwm)
@@ -1103,7 +1083,6 @@ static void mipi_orise_set_backlight(struct msm_fb_data_type *mfd)
 	int bl_level;
 
 	bl_level = mfd->bl_level;
-	pr_debug("%s+ bl_level=%d\n", __func__, mfd->bl_level);
 
 	mipi_dsi_set_backlight(mfd);
 
@@ -1111,7 +1090,7 @@ static void mipi_orise_set_backlight(struct msm_fb_data_type *mfd)
 
 static void mipi_orise_display_on(struct msm_fb_data_type *mfd)
 {
-	pr_debug("%s+\n", __func__);
+	PR_DISP_DEBUG("%s+\n", __func__);
 	mutex_lock(&cmdlock);
 	mipi_dsi_op_mode_config(DSI_CMD_MODE);
 	mipi_dsi_cmds_tx(&orise_tx_buf, orise_display_on_cmds,
@@ -1123,11 +1102,11 @@ static void mipi_orise_bkl_switch(struct msm_fb_data_type *mfd, bool on)
 {
 	unsigned int val = 0;
 
-	if(on) {
+	if (on) {
 		mipi_status = 1;
 		val = mfd->bl_level;
-		if(val == 0) {
-			if(bl_level_prevset != 1) {
+		if (val == 0) {
+			if (bl_level_prevset != 1) {
 				val = bl_level_prevset;
 				mfd->bl_level = val;
 			} else {
@@ -1146,7 +1125,7 @@ static void mipi_orise_bkl_switch(struct msm_fb_data_type *mfd, bool on)
 static void mipi_orise_bkl_ctrl(bool on)
 {
 	mutex_lock(&cmdlock);
-	if(on) {
+	if (on) {
 		mipi_dsi_op_mode_config(DSI_CMD_MODE);
 		mipi_dsi_cmds_tx(&orise_tx_buf, orise_bkl_enable_cmds,
 			ARRAY_SIZE(orise_bkl_enable_cmds));

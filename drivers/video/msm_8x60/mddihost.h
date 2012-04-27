@@ -232,7 +232,7 @@ void mddi_wait(uint16 time_ms);
 void mddi_assign_max_pkt_dimensions(uint16 image_cols,
 				    uint16 image_rows,
 				    uint16 bpp,
-				    uint16 *max_cols, uint16 * max_rows);
+				    uint16 *max_cols, uint16 *max_rows);
 #ifdef MDDI_HOST_WINDOW_WORKAROUND
 uint16 mddi_assign_pkt_height(uint16 pkt_width, uint16 pkt_height, uint16 bpp);
 #endif

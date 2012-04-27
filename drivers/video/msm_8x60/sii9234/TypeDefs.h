@@ -23,16 +23,12 @@ typedef unsigned int		bool;
 typedef unsigned char		byte;
 typedef unsigned short		word;
 
-// Generic Constants
-//==================
 #define FALSE                   0
 #define TRUE                    1
 
 #define LOW                     0
 #define HIGH                    1
 
-// Generic Masks
-//==============
 #define _ZERO					0x00
 #define BIT_0                   0x01
 #define BIT_1                   0x02

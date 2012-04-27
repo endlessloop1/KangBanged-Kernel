@@ -14,5 +14,5 @@
  * GNU General Public License for more details.
  *
  *****************************************************************************/
-void DelayMS (word);
+void DelayMS(word);
 

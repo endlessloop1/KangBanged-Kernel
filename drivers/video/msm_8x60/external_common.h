@@ -207,6 +207,7 @@ struct external_common_state_type {
 	struct kobject *uevent_kobj;
 	uint32 video_resolution;
 	struct device *dev;
+	bool vcdb_support;
 #ifdef CONFIG_FB_MSM_HDMI_3D
 	boolean format_3d;
 	void (*switch_3d)(boolean on);
@@ -259,5 +260,6 @@ extern  uint8_t ReadHPD(void);
 extern void update_mhl_status(bool isMHL, enum usb_connect_type statMHL);
 extern bool IsD0Mode(void);
 extern void SetHDCPStatus(bool Status);
+extern bool  g_bEnterEarlySuspend;
 #endif
 #endif /* __EXTERNAL_COMMON_H__ */

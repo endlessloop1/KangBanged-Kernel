@@ -39,6 +39,7 @@
 #include "mdp.h"
 #include "msm_fb.h"
 #include "mddihost.h"
+#include <mach/debug_display.h>
 
 #ifdef CONFIG_MSM_MDP40
 #include "mdp4.h"
@@ -58,13 +59,6 @@
 #define MDP_PRIM_VSYNC_OUT_CTRL	0x318
 #define MDP_PRIM_VSYNC_INIT_VAL	0x328
 #endif
-
-
-extern mddi_lcd_type mddi_lcd_idx;
-extern spinlock_t mdp_spin_lock;
-extern struct workqueue_struct *mdp_vsync_wq;
-extern int lcdc_mode;
-extern int vsync_mode;
 
 #ifdef MDP_HW_VSYNC
 int vsync_above_th = 4;
@@ -107,10 +101,10 @@ void mdp_vsync_clk_enable(void)
 {
 	if (vsync_mfd) {
 		mdp_hw_vsync_clk_enable(vsync_mfd);
-		if (!vsync_mfd->vsync_resync_timer.function) {
-		mdp_set_vsync((unsigned long) vsync_mfd);
+		if (!vsync_mfd->vsync_resync_timer.function)
+			mdp_set_vsync((unsigned long) vsync_mfd);
+
 	}
-}
 }
 
 void mdp_vsync_clk_disable(void)
@@ -175,7 +169,7 @@ static void mdp_vsync_handler(void *data)
 	struct msm_fb_data_type *mfd = (struct msm_fb_data_type *)data;
 
 	if (vsync_clk_status == 0) {
-		pr_debug("Warning: vsync clk is disabled\n");
+		PR_DISP_DEBUG("Warning: vsync clk is disabled\n");
 		mfd->vsync_handler_pending = FALSE;
 		return;
 	}
@@ -260,8 +254,8 @@ void mdp_config_vsync(struct msm_fb_data_type *mfd)
 		mfd->lcd_ref_usec_time =
 		    100000000 / mfd->panel_info.lcd.refx100;
 		mfd->vsync_handler_pending = FALSE;
-		mfd->last_vsync_timetick.tv.sec = 0;
-		mfd->last_vsync_timetick.tv.nsec = 0;
+
+		mfd->last_vsync_timetick.tv64 = 0;
 
 #ifdef MDP_HW_VSYNC
 		if (mdp_vsync_clk == NULL)
@@ -471,9 +465,8 @@ uint32 mdp_get_lcd_line_counter(struct msm_fb_data_type *mfd)
 	spin_unlock_irqrestore(&mdp_spin_lock, flag);
 
 	curr_time = ktime_get_real();
-	elapsed_usec_time =
-	    ((curr_time.tv.sec - last_vsync_timetick_local.tv.sec) * 1000000) +
-	    ((curr_time.tv.nsec - last_vsync_timetick_local.tv.nsec) / 1000);
+	elapsed_usec_time = ktime_to_us(ktime_sub(curr_time,
+						last_vsync_timetick_local));
 
 	elapsed_usec_time = elapsed_usec_time % mfd->lcd_ref_usec_time;
 

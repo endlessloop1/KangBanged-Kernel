@@ -30,8 +30,10 @@
 #ifndef MIPI_HIMAX_BLUE_H
 #define MIPI_HIMAX_BLUE_H
 
-
 int mipi_himax_device_register(struct msm_panel_info *pinfo,
 					u32 channel, u32 panel);
 
+extern int mipi_status;
+extern int bl_level_prevset;
+extern struct mutex cmdlock;
 #endif  /* MIPI_HIMAX_BLUE_H */

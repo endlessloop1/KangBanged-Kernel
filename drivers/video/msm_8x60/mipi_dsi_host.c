@@ -41,8 +41,9 @@
 
 #include "msm_fb.h"
 #include "mipi_dsi.h"
+#include <mach/debug_display.h>
 
-//#define DSI_HOST_DEBUG 1
+/* #define DSI_HOST_DEBUG 1 */
 
 static struct mutex dsi_mutex;
 static struct completion dsi_dma_comp;
@@ -66,7 +67,7 @@ void mipi_dsi_enable_irq(void)
 
 	spin_lock_irqsave(&dsi_lock, flags);
 	if (dsi_irq_enabled) {
-		pr_debug("[DISP]%s: IRQ already enabled\n", __func__);
+		PR_DISP_DEBUG("%s: IRQ already enabled\n", __func__);
 		spin_unlock_irqrestore(&dsi_lock, flags);
 		return;
 	}
@@ -81,7 +82,7 @@ void mipi_dsi_disable_irq(void)
 
 	spin_lock_irqsave(&dsi_lock, flags);
 	if (dsi_irq_enabled == 0) {
-		pr_warn("[DISP]%s: IRQ cannot be disabled\n", __func__);
+		PR_DISP_WARN("%s: IRQ cannot be disabled\n", __func__);
 		spin_unlock_irqrestore(&dsi_lock, flags);
 		return;
 	}
@@ -99,7 +100,7 @@ void mipi_dsi_disable_irq(void)
 {
 	spin_lock(&dsi_lock);
 	if (dsi_irq_enabled == 0) {
-		pr_debug("%s: IRQ cannot be disabled\n", __func__);
+		PR_DISP_DEBUG("%s: IRQ cannot be disabled\n", __func__);
 		return;
 	}
 
@@ -156,7 +157,7 @@ int mipi_dsi_buf_alloc(struct dsi_buf *dp, int size)
 
 	dp->start = kmalloc(size, GFP_KERNEL);
 	if (dp->start == NULL) {
-		pr_err("%s:%u\n", __func__, __LINE__);
+		PR_DISP_ERR("%s:%u\n", __func__, __LINE__);
 		return -ENOMEM;
 	}
 
@@ -164,7 +165,7 @@ int mipi_dsi_buf_alloc(struct dsi_buf *dp, int size)
 	dp->size = size;
 
 	if ((int)dp->start & 0x07)
-		pr_err("%s: buf NOT 8 bytes aligned\n", __func__);
+		PR_DISP_ERR("%s: buf NOT 8 bytes aligned\n", __func__);
 
 	dp->data = dp->start;
 	dp->len = 0;
@@ -221,7 +222,7 @@ static int mipi_dsi_generic_swrite(struct dsi_buf *dp, struct dsi_cmd_desc *cm)
 	int len;
 
 	if (cm->dlen && cm->payload == 0) {
-		pr_err("%s: NO payload error\n", __func__);
+		PR_DISP_ERR("%s: NO payload error\n", __func__);
 		return 0;
 	}
 
@@ -263,7 +264,7 @@ static int mipi_dsi_generic_read(struct dsi_buf *dp, struct dsi_cmd_desc *cm)
 	int len;
 
 	if (cm->dlen && cm->payload == 0) {
-		pr_err("%s: NO payload error\n", __func__);
+		PR_DISP_ERR("%s: NO payload error\n", __func__);
 		return 0;
 	}
 
@@ -348,7 +349,7 @@ static int mipi_dsi_dcs_swrite(struct dsi_buf *dp, struct dsi_cmd_desc *cm)
 	int len;
 
 	if (cm->payload == 0) {
-		pr_err("%s: NO payload error\n", __func__);
+		PR_DISP_ERR("%s: NO payload error\n", __func__);
 		return -EINVAL;
 	}
 
@@ -379,7 +380,7 @@ static int mipi_dsi_dcs_swrite1(struct dsi_buf *dp, struct dsi_cmd_desc *cm)
 	uint32 *hp;
 
 	if (cm->dlen < 2 || cm->payload == 0) {
-		pr_err("%s: NO payload error\n", __func__);
+		PR_DISP_ERR("%s: NO payload error\n", __func__);
 		return -EINVAL;
 	}
 
@@ -409,7 +410,7 @@ static int mipi_dsi_dcs_read(struct dsi_buf *dp, struct dsi_cmd_desc *cm)
 	uint32 *hp;
 
 	if (cm->payload == 0) {
-		pr_err("%s: NO payload error\n", __func__);
+		PR_DISP_ERR("%s: NO payload error\n", __func__);
 		return -EINVAL;
 	}
 
@@ -503,7 +504,7 @@ static int mipi_dsi_set_max_pktsize(struct dsi_buf *dp, struct dsi_cmd_desc *cm)
 	uint32 *hp;
 
 	if (cm->payload == 0) {
-		pr_err("%s: NO payload error\n", __func__);
+		PR_DISP_ERR("%s: NO payload error\n", __func__);
 		return 0;
 	}
 
@@ -656,7 +657,7 @@ int mipi_dsi_cmd_dma_add(struct dsi_buf *dp, struct dsi_cmd_desc *cm)
 		len = mipi_dsi_hsync_start(dp, cm);
 		break;
 	default:
-		pr_info("%s: dtype=%x NOT supported\n",
+		PR_DISP_INFO("%s: dtype=%x NOT supported\n",
 					__func__, cm->dtype);
 		break;
 
@@ -719,7 +720,7 @@ void mipi_dsi_host_init(struct mipi_panel_info *pinfo)
 			data |= BIT(16);
 		MIPI_OUTP(MIPI_DSI_BASE + 0x0040, data);
 	} else
-		pr_err("%s: Unknown DSI mode=%d\n", __func__, pinfo->mode);
+		PR_DISP_ERR("%s: Unknown DSI mode=%d\n", __func__, pinfo->mode);
 
 	dsi_ctrl = BIT(8) | BIT(2);	/* clock enable & cmd mode */
 	intr_ctrl = 0;
@@ -802,20 +803,33 @@ void mipi_set_tx_power_mode(int mode)
 	MIPI_OUTP(MIPI_DSI_BASE + 0x38, data);
 }
 
-void mipi_dsi_sw_reset(void)
+int mipi_dsi_controller_on(void)
 {
-	pr_info("[DISP] %s: ----- need to do soft reset! -----\n", __func__);
-	MIPI_OUTP(MIPI_DSI_BASE + 0x0200, 1);
-	MIPI_OUTP(MIPI_DSI_BASE + 0x0114, 1);
-	hr_msleep(10);
-	MIPI_OUTP(MIPI_DSI_BASE + 0x0114, 0);
+
+	uint32 dsi_ctrl;
+
+	dsi_ctrl = MIPI_INP(MIPI_DSI_BASE + 0x0000);
+
+	return dsi_ctrl & 0x01;
 }
 
+void mipi_dsi_sw_reset(void)
+{
+	MIPI_OUTP(MIPI_DSI_BASE + 0x0200, 0x01);
+	MIPI_OUTP(MIPI_DSI_BASE + 0x114, 0x01);
+	wmb();
+	MIPI_OUTP(MIPI_DSI_BASE + 0x114, 0x00);
+	wmb();
+}
+
+/*
+ * mutex need to be acquired by caller
+ */
 void mipi_dsi_controller_cfg(int enable, int cmd, int video)
 {
 
 	uint32 dsi_ctrl;
-	uint32 status = 0, mask;
+	uint32 status, mask;
 	int cnt;
 
 	mask = 0x02;		/* CMD_MODE_DMA_BUSY */
@@ -835,9 +849,8 @@ void mipi_dsi_controller_cfg(int enable, int cmd, int video)
 			break;
 		usleep(1000);
 	}
-
 	if (cnt == 0)
-		pr_info("%s: DSI status=%x failed\n", __func__, status);
+		PR_DISP_INFO("%s: DSI status=%x failed\n", __func__, status);
 
 	cnt = 16;
 	while (cnt--) {
@@ -849,7 +862,7 @@ void mipi_dsi_controller_cfg(int enable, int cmd, int video)
 	}
 
 	if (cnt == 0)
-		pr_info("%s: FIFO status=%x failed\n", __func__, status);
+		PR_DISP_INFO("%s: FIFO status=%x failed\n", __func__, status);
 
 	dsi_ctrl = MIPI_INP(MIPI_DSI_BASE + 0x0000);
 	if (enable)
@@ -887,8 +900,6 @@ void mipi_dsi_op_mode_config(int mode)
 				DSI_INTR_CMD_MDP_DONE_MASK;
 	}
 
-	pr_debug("%s: dsi_ctrl=%x intr=%x\n", __func__, dsi_ctrl, intr_ctrl);
-
 	MIPI_OUTP(MIPI_DSI_BASE + 0x010c, intr_ctrl); /* DSI_INTL_CTRL */
 	MIPI_OUTP(MIPI_DSI_BASE + 0x0000, dsi_ctrl);
 	wmb();
@@ -918,7 +929,7 @@ void mipi_dsi_cmd_bta_sw_trigger(void)
 
 	mipi_dsi_ack_err_status();
 
-	pr_debug("%s: BTA done, cnt=%d\n", __func__, cnt);
+	PR_DISP_DEBUG("%s: BTA done, cnt=%d\n", __func__, cnt);
 }
 
 static char set_tear_on[2] = {0x35, 0x00};
@@ -954,11 +965,11 @@ int mipi_dsi_cmd_reg_tx(uint32 data)
 	char *bp;
 
 	bp = (char *)&data;
-	pr_info("%s: ", __func__);
+	PR_DISP_INFO("%s: ", __func__);
 	for (i = 0; i < 4; i++)
-		pr_info("%x ", *bp++);
+		PR_DISP_INFO("%x ", *bp++);
 
-	pr_info("\n");
+	PR_DISP_INFO("\n");
 #endif
 
 	MIPI_OUTP(MIPI_DSI_BASE + 0x0080, 0x04);/* sw trigger */
@@ -996,9 +1007,10 @@ int mipi_dsi_cmds_tx(struct dsi_buf *tp, struct dsi_cmd_desc *cmds, int cnt)
 	struct dsi_cmd_desc *cm;
 	uint32 dsi_ctrl, ctrl;
 	int i, video_mode;
+	struct msm_fb_data_type* rtn_mfd;
 
-	dsi_mutex_lock();
-	dsi_busy_check();
+	rtn_mfd = dsi_mutex_lock();
+	dsi_busy_check(rtn_mfd);
 
 	/* turn on cmd mode
 	 * for video mode, do not send cmds more than
@@ -1028,7 +1040,7 @@ int mipi_dsi_cmds_tx(struct dsi_buf *tp, struct dsi_cmd_desc *cmds, int cnt)
 	if (video_mode)
 		MIPI_OUTP(MIPI_DSI_BASE + 0x0000, dsi_ctrl); /* restore */
 
-	dsi_mutex_unlock();
+	dsi_mutex_unlock(rtn_mfd);
 
 	return cnt;
 }
@@ -1044,6 +1056,7 @@ int mipi_dsi_cmds_rx(struct dsi_buf *tp, struct dsi_buf *rp,
 				struct dsi_cmd_desc *cmds, int len)
 {
 	int cnt, res;
+	struct msm_fb_data_type* rtn_mfd;
 
 	if (len <= 2)
 		cnt = 4;	/* short read */
@@ -1051,7 +1064,7 @@ int mipi_dsi_cmds_rx(struct dsi_buf *tp, struct dsi_buf *rp,
 		cnt = MIPI_DSI_MRPS + 6; /* long read, 4 bytes header + 2 bytes crc */
 
 	if (cnt > MIPI_DSI_REG_LEN) {
-		pr_info("%s: len=%d too long\n", __func__, len);
+		PR_DISP_INFO("%s: len=%d too long\n", __func__, len);
 		return -ERANGE;
 	}
 
@@ -1062,8 +1075,8 @@ int mipi_dsi_cmds_rx(struct dsi_buf *tp, struct dsi_buf *rp,
 	mipi_dsi_buf_init(tp);
 	mipi_dsi_cmd_dma_add(tp, cmds);
 
-	dsi_mutex_lock();
-	dsi_busy_check();
+	rtn_mfd = dsi_mutex_lock();
+	dsi_busy_check(rtn_mfd);
 
 	mipi_dsi_enable_irq();
 	/* transmit read comamnd to client */
@@ -1077,7 +1090,7 @@ int mipi_dsi_cmds_rx(struct dsi_buf *tp, struct dsi_buf *rp,
 	mipi_dsi_cmd_dma_rx(rp, cnt);
 
 	mipi_dsi_disable_irq();
-	dsi_mutex_unlock();
+	dsi_mutex_unlock(rtn_mfd);
 
 	/* strip off dcs read header & crc */
 	rp->data += (4 + res);
@@ -1097,11 +1110,11 @@ int mipi_dsi_cmd_dma_tx(struct dsi_buf *tp)
 
 	bp = tp->data;
 
-	pr_info("%s: ", __func__);
+	PR_DISP_INFO("%s: ", __func__);
 	for (i = 0; i < tp->len; i++)
-		pr_info("%x ", *bp++);
+		PR_DISP_INFO("%x ", *bp++);
 
-	pr_info("\n");
+	PR_DISP_INFO("\n");
 #endif
 
 	len = tp->len;
@@ -1110,7 +1123,7 @@ int mipi_dsi_cmd_dma_tx(struct dsi_buf *tp)
 
 	tp->dmap = dma_map_single(&dsi_dev, tp->data, len, DMA_TO_DEVICE);
 	if (dma_mapping_error(&dsi_dev, tp->dmap))
-		pr_err("%s: dmap mapp failed\n", __func__);
+		PR_DISP_ERR("%s: dmap mapp failed\n", __func__);
 
 	INIT_COMPLETION(dsi_dma_comp);
 
@@ -1120,15 +1133,14 @@ int mipi_dsi_cmd_dma_tx(struct dsi_buf *tp)
 	MIPI_OUTP(MIPI_DSI_BASE + 0x08c, 0x01);	/* trigger */
 	wmb();
 
-	//wait_for_completion(&dsi_dma_comp);
 	timeout = wait_for_completion_timeout(&dsi_dma_comp, HZ/10);
 
 	if (!timeout) {
 		u32 isr = MIPI_INP(MIPI_DSI_BASE + 0x010c);
 		MIPI_OUTP(MIPI_DSI_BASE + 0x010c, isr);
-		pr_err("%s timeout, isr=0x%08x\n", __func__, isr);
+		PR_DISP_ERR("%s timeout, isr=0x%08x\n", __func__, isr);
 		mipi_dsi_read_status_reg();
-		mipi_dsi_reset_set(1);
+		atomic_set(&need_soft_reset, 1);
 	}
 
 	dma_unmap_single(&dsi_dev, tp->dmap, len, DMA_TO_DEVICE);
@@ -1188,7 +1200,7 @@ void mipi_dsi_ack_err_status(void)
 
 	if (status) {
 		MIPI_OUTP(MIPI_DSI_BASE + 0x0064, status);
-		pr_err("%s: status=%x\n", __func__, status);
+		PR_DISP_ERR("%s: status=%x\n", __func__, status);
 	}
 }
 
@@ -1199,7 +1211,7 @@ void mipi_dsi_timeout_status(void)
 	status = MIPI_INP(MIPI_DSI_BASE + 0x00bc);/* DSI_TIMEOUT_STATUS */
 	if (status & 0x0111) {
 		MIPI_OUTP(MIPI_DSI_BASE + 0x00bc, status);
-		pr_err("%s: status=%x\n", __func__, status);
+		PR_DISP_ERR("%s: status=%x\n", __func__, status);
 	}
 }
 
@@ -1211,7 +1223,7 @@ void mipi_dsi_dln0_phy_err(void)
 
 	if (status & 0x011111) {
 		MIPI_OUTP(MIPI_DSI_BASE + 0x00b0, status);
-		pr_err("%s: status=%x\n", __func__, status);
+		PR_DISP_ERR("%s: status=%x\n", __func__, status);
 	}
 }
 
@@ -1223,7 +1235,7 @@ void mipi_dsi_fifo_status(void)
 
 	if (status & 0x44444489) {
 		MIPI_OUTP(MIPI_DSI_BASE + 0x0008, status);
-		pr_err("%s: status=%x\n", __func__, status);
+		PR_DISP_ERR("%s: status=%x\n", __func__, status);
 	}
 }
 
@@ -1235,13 +1247,13 @@ void mipi_dsi_status(void)
 
 	if (status & 0x80000000) {
 		MIPI_OUTP(MIPI_DSI_BASE + 0x0004, status);
-		pr_err("%s: status=%x\n", __func__, status);
+		PR_DISP_ERR("%s: status=%x\n", __func__, status);
 	}
 }
 
 void mipi_dsi_error(void)
 {
-	pr_err("%s\n", __func__);
+	PR_DISP_ERR("%s\n", __func__);
 	/* DSI_ERR_INT_MASK0 */
 	mipi_dsi_ack_err_status();	/* mask0, 0x01f */
 	mipi_dsi_timeout_status();	/* mask0, 0x0e0 */
@@ -1276,14 +1288,14 @@ void mipi_dsi_read_status_reg(void)
 #endif
 	};
 
-	pr_info("%s\n", __func__);
+	PR_DISP_INFO("%s\n", __func__);
 	for (i = 0; i < ARRAY_SIZE(status_regs); i++) {
 		offset = status_regs[i].offset;
 		status = MIPI_INP(MIPI_DSI_BASE + offset);
 		/* write reg to clear corresponding bit */
 		MIPI_OUTP(MIPI_DSI_BASE + offset, status);
 		if (status & status_regs[i].mask)
-			pr_info("[MIPI] %s: curr=0x%08x, last=0x%08x\n",
+			PR_DISP_INFO("[MIPI] %s: curr=0x%08x, last=0x%08x\n",
 				status_regs[i].name, status,
 				status_regs[i].last_val);
 		status_regs[i].last_val = MIPI_INP(MIPI_DSI_BASE + offset);
@@ -1297,11 +1309,8 @@ irqreturn_t mipi_dsi_isr(int irq, void *ptr)
 	isr = MIPI_INP(MIPI_DSI_BASE + 0x010c);/* DSI_INTR_CTRL */
 	MIPI_OUTP(MIPI_DSI_BASE + 0x010c, isr);
 
-	if (isr & DSI_INTR_ERROR) {
-		pr_info("%s: DSI_INTR_ERROR occurs\n", __func__);
+	if (isr & DSI_INTR_ERROR)
 		mipi_dsi_read_status_reg();
-		mipi_dsi_reset_set(1);
-	}
 
 	if (isr & DSI_INTR_VIDEO_DONE) {
 		/*
@@ -1309,11 +1318,13 @@ irqreturn_t mipi_dsi_isr(int irq, void *ptr)
 		*/
 	}
 
-	if (isr & DSI_INTR_CMD_DMA_DONE) {
+	if (isr & DSI_INTR_CMD_DMA_DONE)
 		complete(&dsi_dma_comp);
-	}
 
 	if (isr & DSI_INTR_CMD_MDP_DONE) {
+		/*
+		* do something  here
+		*/
 	}
 
 	return IRQ_HANDLED;

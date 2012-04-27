@@ -29,187 +29,207 @@
 
 static	mhlTx_config_t	mhlTxConfig;
 
-static	bool 		SiiMhlTxRapkSend( void );
-static	void		MhlTxDriveStates( void );
-static	void		MhlTxResetStates( void );
-static	bool		MhlTxSendMscMsg ( uint8_t command, uint8_t cmdData );
-extern	uint8_t		rcpSupportTable [];
+static	bool 	SiiMhlTxRapkSend(void);
+/* static	void		MhlTxDriveStates(void); */
+static	void		MhlTxResetStates(void);
+static	bool		MhlTxSendMscMsg(uint8_t command, uint8_t cmdData);
+
+
+#define NUM_CBUS_EVENT_QUEUE_EVENTS 5
+typedef struct _CBusQueue_t {
+    uint8_t head;
+    uint8_t tail;
+    cbus_req_t queue[NUM_CBUS_EVENT_QUEUE_EVENTS];
+} CBusQueue_t, *PCBusQueue_t;
+
+
+#define QUEUE_SIZE(x) (sizeof(x.queue)/sizeof(x.queue[0]))
+#define MAX_QUEUE_DEPTH(x) (QUEUE_SIZE(x) - 1)
+#define QUEUE_DEPTH(x) ((x.head <= x.tail)?(x.tail-x.head):(QUEUE_SIZE(x)-x.head+x.tail))
+#define QUEUE_FULL(x) (QUEUE_DEPTH(x) >= MAX_QUEUE_DEPTH(x))
+
+#define ADVANCE_QUEUE_HEAD(x) { x.head = (x.head < MAX_QUEUE_DEPTH(x))?(x.head+1):0; }
+#define ADVANCE_QUEUE_TAIL(x) { x.tail = (x.tail < MAX_QUEUE_DEPTH(x))?(x.tail+1):0; }
+
+#define RETREAT_QUEUE_HEAD(x) { x.head = (x.head > 0)?(x.head-1):MAX_QUEUE_DEPTH(x); }
+CBusQueue_t CBusQueue;
+
+
+#define PutNextCBusTransaction(req) PutNextCBusTransactionImpl(req)
+
+bool PutNextCBusTransactionImpl(cbus_req_t *pReq)
+{
+	if (QUEUE_FULL(CBusQueue))
+		return false;
+
+	CBusQueue.queue[CBusQueue.tail] = *pReq;
+	ADVANCE_QUEUE_TAIL(CBusQueue);
+	return true;
+}
+
+static void SiiMhlTxTmdsEnable(void)
+{
+	TPI_DEBUG_PRINT(("MhlTx:SiiMhlTxTmdsEnable\n"));
+	/*if (MHL_RSEN & mhlTxConfig.mhlHpdRSENflags) {
+		TPI_DEBUG_PRINT(("\tMHL_RSEN\n"));
+		if (MHL_HPD & mhlTxConfig.mhlHpdRSENflags) {
+			TPI_DEBUG_PRINT(("\t\tMHL_HPD\n"));
+			if (MHL_STATUS_PATH_ENABLED & mhlTxConfig.status_1) {
+				TPI_DEBUG_PRINT(("\t\t\tMHL_STATUS_PATH_ENABLED\n")); */
+				SiiMhlTxDrvTmdsControl(true);
+	/*		}
+		}
+	} */
+}
+
+static bool SiiMhlTxSetStatus(uint8_t regToWrite, uint8_t value)
+{
+	cbus_req_t	req;
+	bool retVal;
+
+	req.retryCount  = 2;
+	req.command     = MHL_WRITE_STAT;
+	req.offsetData  = regToWrite;
+	req.payload_u.msgData[0]  = value;
+
+	TPI_DEBUG_PRINT(("MhlTx:SiiMhlTxSetStatus\n"));
+	retVal = PutNextCBusTransaction(&req);
+	return retVal;
+}
+
+static bool SiiMhlTxSendLinkMode(void)
+{
+	return SiiMhlTxSetStatus(MHL_STATUS_REG_LINK_MODE, mhlTxConfig.linkMode);
+}
+
+
 
 #ifdef CONFIG_INTERNAL_CHARGING_SUPPORT
 static uint8_t Chk_Dongle_Step;
 #endif
 
-void SiiMhlTxInitialize( bool interruptDriven, uint8_t pollIntervalMs )
+void SiiMhlTxInitialize(bool interruptDriven, uint8_t pollIntervalMs)
 {
-	TPI_DEBUG_PRINT( ("MhlTx: SiiMhlTxInitialize\n") );
+	TPI_DEBUG_PRINT(("MhlTx: SiiMhlTxInitialize\n"));
 	mhlTxConfig.interruptDriven = interruptDriven;
 	mhlTxConfig.pollIntervalMs  = pollIntervalMs;
 
-	MhlTxResetStates( );
+	MhlTxResetStates();
 
 #ifdef CONFIG_INTERNAL_CHARGING_SUPPORT
-	Chk_Dongle_Step=0;
+	Chk_Dongle_Step = 0;
 #endif
 
-//	SiiMhlTxChipInitialize ();
 }
 
-void SiiMhlTxGetEvents( uint8_t *event, uint8_t *eventParameter )
+void SiiMhlTxGetEvents(uint8_t *event, uint8_t *eventParameter)
 {
 	TPI_Poll();
-	MhlTxDriveStates( );
+	MhlTxDriveStates();
 
 	*event = MHL_TX_EVENT_NONE;
 	*eventParameter = 0;
 
-	if( mhlTxConfig.mhlConnectionEvent )
-	{
-		TPI_DEBUG_PRINT( ("MhlTx: SiiMhlTxGetEvents mhlConnectionEvent\n") );
+	if (mhlTxConfig.mhlConnectionEvent) {
+		TPI_DEBUG_PRINT(("MhlTx: SiiMhlTxGetEvents mhlConnectionEvent\n"));
 
 		mhlTxConfig.mhlConnectionEvent = false;
 		*event          = mhlTxConfig.mhlConnected;
 		*eventParameter	= mhlTxConfig.mscFeatureFlag;
 
-		if(MHL_TX_EVENT_DISCONNECTION == mhlTxConfig.mhlConnected)
-		{
-			MhlTxResetStates( );
+		if (MHL_TX_EVENT_DISCONNECTION == mhlTxConfig.mhlConnected) {
+			MhlTxResetStates();
+		} else if (MHL_TX_EVENT_CONNECTION == mhlTxConfig.mhlConnected) {
+			WriteByteCBUS(0x13, 0x30) ;
+			WriteByteCBUS(0x14, 0x01) ;
+			WriteByteCBUS(0x12, 0x08) ;
+			WriteByteCBUS(0x13, 0x20) ;
+			WriteByteCBUS(0x14, 0x01) ;
+			WriteByteCBUS(0x12, 0x08) ;
 		}
-	}
-	else if( mhlTxConfig.mscMsgArrived )
-	{
-		TPI_DEBUG_PRINT( ("MhlTx: SiiMhlTxGetEvents MSC MSG <%02X, %02X>\n",
-							(int) ( mhlTxConfig.mscMsgSubCommand ),
-							(int) ( mhlTxConfig.mscMsgData )) );
+	} else if (mhlTxConfig.mscMsgArrived) {
+		TPI_DEBUG_PRINT(("MhlTx: SiiMhlTxGetEvents MSC MSG <%02X, %02X>\n",
+							(int) (mhlTxConfig.mscMsgSubCommand),
+							(int) (mhlTxConfig.mscMsgData)));
 
 		mhlTxConfig.mscMsgArrived = false;
 
-		switch( mhlTxConfig.mscMsgSubCommand )
-		{
-			case	MHL_MSC_MSG_RAP:
-				if( 0x10 == mhlTxConfig.mscMsgData)
-				{
-					SiiMhlTxDrvTmdsControl( true );
-				}
-				else if( 0x11 == mhlTxConfig.mscMsgData)
-				{
-					SiiMhlTxDrvTmdsControl( false );
-
-				}
-				SiiMhlTxRapkSend( );
+		switch (mhlTxConfig.mscMsgSubCommand) {
+		case	MHL_MSC_MSG_RAP:
+				if (0x10 == mhlTxConfig.mscMsgData)
+					SiiMhlTxDrvTmdsControl(true);
+				else if (0x11 == mhlTxConfig.mscMsgData)
+					SiiMhlTxDrvTmdsControl(false);
+				SiiMhlTxRapkSend();
 				break;
 
-			case	MHL_MSC_MSG_RCP:
-				if((0x01 << 7) & rcpSupportTable [mhlTxConfig.mscMsgData & 0x7F] )
-				{
+		case	MHL_MSC_MSG_RCP:
+				if (MHL_LOGICAL_DEVICE_MAP & rcpSupportTable[mhlTxConfig.mscMsgData & 0x7F]) {
 					*event          = MHL_TX_EVENT_RCP_RECEIVED;
 					*eventParameter = mhlTxConfig.mscMsgData;
-				}
-				else
-				{
+				} else {
 					mhlTxConfig.mscSaveRcpKeyCode = mhlTxConfig.mscMsgData;
-					SiiMhlTxRcpeSend( RCPE_INEEFECTIVE_KEY_CODE );
+					SiiMhlTxRcpeSend(RCPE_INEEFECTIVE_KEY_CODE);
 				}
 				break;
 
-			case	MHL_MSC_MSG_RCPK:
+		case	MHL_MSC_MSG_RCPK:
 				*event = MHL_TX_EVENT_RCPK_RECEIVED;
 				*eventParameter = mhlTxConfig.mscMsgData;
 				break;
 
-			case	MHL_MSC_MSG_RCPE:
+		case	MHL_MSC_MSG_RCPE:
 				*event = MHL_TX_EVENT_RCPE_RECEIVED;
 				*eventParameter = mhlTxConfig.mscMsgData;
 				break;
 
-			case	MHL_MSC_MSG_RAPK:
+		case	MHL_MSC_MSG_RAPK:
 				break;
 
-			default:
+		default:
 				break;
 		}
 	}
 }
 
-static	void	MhlTxDriveStates( void )
+void	MhlTxDriveStates(void)
 {
 
-	switch( mhlTxConfig.mscState )
-	{
-		case MSC_STATE_BEGIN:
-			SiiMhlTxReadDevcap( 0x02 );
+	switch (mhlTxConfig.mscState) {
+	case MSC_STATE_BEGIN:
+			SiiMhlTxReadDevcap(0x02);
 			break;
-		case MSC_STATE_POW_DONE:
-			SiiMhlTxReadDevcap( 0x0A );
+	case MSC_STATE_POW_DONE:
+			SiiMhlTxReadDevcap(0x0A);
 			break;
-		case MSC_STATE_IDLE:
-		case MSC_STATE_RCP_READY:
+	case MSC_STATE_IDLE:
+	case MSC_STATE_RCP_READY:
 			break;
-		default:
+	default:
 			break;
 
 	}
 }
 
 #ifdef CONFIG_INTERNAL_CHARGING_SUPPORT
-extern void ProcessMhlStatus(bool, bool);
-extern int mscCmdInProgress;
-extern enum usb_connect_type gStatusMHL;
-
 bool Tri_state_dongle_GPIO0(void)
 {
 	bool result = true;
 
-#if 1
-
-#define	INTR_CBUS1_DESIRED_MASK			(BIT_2 | BIT_3 | BIT_4 | BIT_5 | BIT_6)
-#define	UNMASK_CBUS1_INTERRUPTS			I2C_WriteByte(CBUS_SLAVE_ADDR, 0x09, INTR_CBUS1_DESIRED_MASK)
-#define	MASK_CBUS1_INTERRUPTS			I2C_WriteByte(CBUS_SLAVE_ADDR, 0x09, 0x00)
-#define	INTR_CBUS2_DESIRED_MASK			(BIT_2 | BIT_3 | BIT_4)
-#define	UNMASK_CBUS2_INTERRUPTS			I2C_WriteByte(CBUS_SLAVE_ADDR, 0x1F, INTR_CBUS2_DESIRED_MASK)
-#define	MASK_CBUS2_INTERRUPTS			I2C_WriteByte(CBUS_SLAVE_ADDR, 0x1F, 0x00)
-
-	int timeout = 100;
-
-	MASK_CBUS1_INTERRUPTS;
-	MASK_CBUS2_INTERRUPTS;
-
-
-	//don't activate this function before problem solved
-	return result;
-
-
-	while(mscCmdInProgress && --timeout) {
-		hr_msleep(1);
-	}
-
-	printk("%s: timeout = %d\n", __func__, timeout);
-
-	if(!timeout) {
-		result = false;
-		goto l_end;
-	}
-#endif
 	I2C_WriteByte(CBUS_SLAVE_ADDR,0x13, 0x33);       // enable backdoor access
 	I2C_WriteByte(CBUS_SLAVE_ADDR,0x14, 0x80);
 	I2C_WriteByte(CBUS_SLAVE_ADDR,0x12, 0x08);
 
-	// Set GPIO0=Input
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc0,  0xff);          // main page  ; FE for Cbus page
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc1,  0x7F);        // offset
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc2,  0xFF);       // data set GPIO=input
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x20,  0x02);         // burst length-1
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x13,  0x48);         // offset in scratch pad
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x12,  0x10);        // trig this command
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc0,  0xff);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc1,  0x7F);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc2,  0xFF);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x20,  0x02);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x13,  0x48);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x12,  0x10);
 
-	I2C_WriteByte(CBUS_SLAVE_ADDR,0x13, 0x33);           // disable backdoor access
-	I2C_WriteByte(CBUS_SLAVE_ADDR,0x14, 0x00);
-	I2C_WriteByte(CBUS_SLAVE_ADDR,0x12, 0x08);
-
-#if 1
-l_end:
-	UNMASK_CBUS2_INTERRUPTS;
-	UNMASK_CBUS1_INTERRUPTS;
-#endif
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x13, 0x33);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x14, 0x00);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x12, 0x08);
 
 	return result;
 }
@@ -217,34 +237,40 @@ l_end:
 void Low_dongle_GPIO0(void)
 {
 
-	I2C_WriteByte(CBUS_SLAVE_ADDR,0x13, 0x33);                               // enable backdoor access
-	I2C_WriteByte(CBUS_SLAVE_ADDR,0x14, 0x80);
-	I2C_WriteByte(CBUS_SLAVE_ADDR,0x12, 0x08);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x13, 0x33);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x14, 0x80);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x12, 0x08);
 
-	// Set GPIO0=low
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc0,  0xff);                              // main page  ; FE for Cbus page
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc1,  0x7F);                             // offset
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc2,  0xFC);                             // data set GPIO0=Lo ; 0xF3 set GPIO1=Lo
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x20,  0x02);                             // burst length-1
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x13,  0x48);                             // offset in scratch pad
-	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x12,  0x10);                             // trig this command
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc0, 0xff);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc1, 0x7F);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0xc2, 0xFC);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x20, 0x02);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x13, 0x48);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x12, 0x10);
 
-	I2C_WriteByte(CBUS_SLAVE_ADDR,0x13, 0x33);                               // disable backdoor access
-	I2C_WriteByte(CBUS_SLAVE_ADDR,0x14, 0x00);
-	I2C_WriteByte(CBUS_SLAVE_ADDR,0x12, 0x08);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x13, 0x33);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x14, 0x00);
+	I2C_WriteByte(CBUS_SLAVE_ADDR, 0x12, 0x08);
 }
 
-void SiiMhlTxMscDetectCharger( uint8_t data1)
+void SiiMhlTxMscDetectCharger(uint8_t data1)
 {
-	if ((data1 & 0x13) == 0x11) { 							 // connected to TV; and TV has power output (default 0.5A min )
+	if ((data1 & 0x13) == 0x11) {
 		/* Turn off phone Vbus output ; */
 		/* Set battery charge current=500mA; */
 		/* Enable battery charger; */
 		mscCmdInProgress = false;
 		mhlTxConfig.mscState	  = MSC_STATE_POW_DONE;
+		Chk_Dongle_Step = 0;
+		/* now suppose TV always provide 1A current */
+		TPI_DEBUG_PRINT(("1000mA charger!!\n"));
+		if (gStatusMHL != CONNECT_TYPE_AC) {
+			gStatusMHL = CONNECT_TYPE_AC;
+			ProcessMhlStatus(true, false);
+		}
 	}
 
-	if ((data1 & 0x03) == 0x03) {			 /* 03=dongle */
+	if ((data1 & 0x03) == 0x03) {
 
 		if (Chk_Dongle_Step == 0) {
 
@@ -257,23 +283,27 @@ void SiiMhlTxMscDetectCharger( uint8_t data1)
 			/* GPIO0_state=3; */
 
 			mscCmdInProgress = false;
-			SiiMhlTxReadDevcap(02); /* send ReadDevCapReg0x02 packet out; POW will be returned on next MhlCbusIsr( )*/
+			SiiMhlTxReadDevcap(0x02);
 			mscCmdInProgress = false;
 			Chk_Dongle_Step = 1;
+			return;
 		}
 
 		if (Chk_Dongle_Step == 1) {
 
 			mscCmdInProgress = false;
 
-			if ((data1 & 0x10)) {			 /* POW bit=1=Rx has power */
+			if (data1 & 0x10) {
 				/* Turn off phone Vbus output ; */
 				Low_dongle_GPIO0();
 
 				/* GPIO0_state = 0;  */
-				SiiMhlTxReadDevcap(02);	/* send ReadDevCapReg0x02 packet out; POW will be returned on next MhlCbusIsr( ) */
+#if 0
+				SiiMhlTxReadDevcap(0x02);
+#endif
 				mscCmdInProgress = false;
 				Chk_Dongle_Step = 2;
+				return;
 			} else {
 
 				Chk_Dongle_Step = 0;
@@ -283,22 +313,21 @@ void SiiMhlTxMscDetectCharger( uint8_t data1)
 				/* turn on phone VBUS output.; */
 				TPI_DEBUG_PRINT(("No charger!!\n"));
 
-				if (gStatusMHL != CONNECT_TYPE_NONE) {
-					gStatusMHL = CONNECT_TYPE_NONE;
+				if (gStatusMHL != CONNECT_TYPE_INTERNAL) {
+					gStatusMHL = CONNECT_TYPE_INTERNAL;
 					ProcessMhlStatus(true, false);
 				}
-				/* system should periodically call siiMhlTxReadDevcap(02), next siiMhlTxGetEvents( )  MhlCbusIsr( ) will on/off Vbus, set charge current here */
 			}
 		}
 
-		if (Chk_Dongle_Step == 2) {			   /* GPIO0_low=true*/
+		if (Chk_Dongle_Step == 2) {
 
-			mhlTxConfig.mscState = MSC_STATE_POW_DONE;				/* 02 ;*/
+			mhlTxConfig.mscState = MSC_STATE_POW_DONE;
 			mscCmdInProgress = false;
 
 			Chk_Dongle_Step = 0;
 
-			if (data1 & 0x10) { 			 /* [bit4] POW ==1=AC charger attached */
+			if (data1 & 0x10) {
 				/* Set charge battery current=AC charger rating-100mA ; */
 
 				/* Enable battery charger; &*/
@@ -308,8 +337,8 @@ void SiiMhlTxMscDetectCharger( uint8_t data1)
 					ProcessMhlStatus(true, false);
 				}
 
-			} else { /* charger port only has USB source provide 5V/100mA , that just enough dongle to work, no more current to charge phone battery */
-				/* turn off phone VBUS output; */		   /* at least no need to send out 5V/100mA power */
+			} else {
+				/* turn off phone VBUS output; */
 				TPI_DEBUG_PRINT(("500mA charger!!\n"));
 				if (gStatusMHL != CONNECT_TYPE_USB) {
 					gStatusMHL = CONNECT_TYPE_USB;
@@ -320,26 +349,23 @@ void SiiMhlTxMscDetectCharger( uint8_t data1)
 	}
 }
 #endif
-void	SiiMhlTxMscCommandDone( uint8_t data1 )
+void	SiiMhlTxMscCommandDone(uint8_t data1)
 {
-	TPI_DEBUG_PRINT( ("MhlTx: SiiMhlTxMscCommandDone. data1 = %02X\n", (int) data1) );
+	TPI_DEBUG_PRINT(("MhlTx: SiiMhlTxMscCommandDone. data1 =%02X\n", (int) data1));
 
-	if(( MHL_READ_DEVCAP == mhlTxConfig.mscLastCommand ) &&
-			(0x02 == mhlTxConfig.mscLastOffset))
-	{
+	if ((MHL_READ_DEVCAP == mhlTxConfig.mscLastCommand) &&
+		(0x02 == mhlTxConfig.mscLastOffset)) {
 
 #ifdef CONFIG_INTERNAL_CHARGING_SUPPORT
 		SiiMhlTxMscDetectCharger(data1);
-#endif
-
+#else
 		mhlTxConfig.mscState	= MSC_STATE_POW_DONE;
-	}
-	else if((MHL_READ_DEVCAP == mhlTxConfig.mscLastCommand) &&
-				(0x0A == mhlTxConfig.mscLastOffset))
-	{
+#endif
+	} else if ((MHL_READ_DEVCAP == mhlTxConfig.mscLastCommand) &&
+			(0x0A == mhlTxConfig.mscLastOffset)) {
 		mhlTxConfig.mscState	= MSC_STATE_RCP_READY;
 
-		mhlTxConfig.mscFeatureFlag	= data1;
+		mhlTxConfig.mscFeatureFlag = data1;
 
 		mhlTxConfig.mhlConnectionEvent = true;
 		mhlTxConfig.mhlConnected = MHL_TX_EVENT_RCP_READY;
@@ -347,244 +373,216 @@ void	SiiMhlTxMscCommandDone( uint8_t data1 )
 		mhlTxConfig.mscLastCommand = 0;
 		mhlTxConfig.mscLastOffset  = 0;
 
-		TPI_DEBUG_PRINT( ("MhlTx: Peer's Feature Flag = %02X\n\n", (int) data1) );
-	}
-	else if(MHL_MSC_MSG_RCPE == mhlTxConfig.mscMsgLastCommand)
-	{
-		if( SiiMhlTxRcpkSend( mhlTxConfig.mscSaveRcpKeyCode ) )
-		{
+		TPI_DEBUG_PRINT(("MhlTx: Peer's Feature Flag =%02X\n", (int) data1));
+	} else if (MHL_MSC_MSG_RCPE == mhlTxConfig.mscMsgLastCommand) {
+		if (SiiMhlTxRcpkSend(mhlTxConfig.mscSaveRcpKeyCode)) {
 			mhlTxConfig.mscMsgLastCommand = 0;
-			mhlTxConfig.mscMsgLastData    = 0;
+			mhlTxConfig.mscMsgLastData = 0;
 		}
 	}
 }
 
-void	SiiMhlTxGotMhlMscMsg( uint8_t subCommand, uint8_t cmdData )
+void	SiiMhlTxGotMhlMscMsg(uint8_t subCommand, uint8_t cmdData)
 {
 	mhlTxConfig.mscMsgArrived		= true;
 	mhlTxConfig.mscMsgSubCommand	= subCommand;
 	mhlTxConfig.mscMsgData			= cmdData;
 }
 
-void	SiiMhlTxGotMhlIntr( uint8_t intr_0, uint8_t intr_1 )
+void	SiiMhlTxGotMhlIntr(uint8_t intr_0, uint8_t intr_1)
 {
-	TPI_DEBUG_PRINT( ("MhlTx: INTERRUPT Arrived. %02X, %02X\n", (int) intr_0, (int) intr_1) );
-
-
-	if(BIT_0 & intr_0)
-	{
-		SiiMhlTxReadDevcap( 0x02 );
-	}
-	else if(BIT_1 & intr_1)
-	{
-		SiiMhlTxDrvNotifyEdidChange ( );
-	}
+	TPI_DEBUG_PRINT(("MhlTx: INTERRUPT Arrived. %02X, %02X\n", (int) intr_0, (int) intr_1));
+	if (BIT_0 & intr_0)
+		SiiMhlTxReadDevcap(0x02);
+	else if (BIT_1 & intr_1)
+		SiiMhlTxDrvNotifyEdidChange();
 }
 
-void	SiiMhlTxGotMhlStatus( uint8_t status_0, uint8_t status_1 )
+void	SiiMhlTxGotMhlStatus(uint8_t status_0, uint8_t status_1)
 {
-	TPI_DEBUG_PRINT( ("MhlTx: STATUS Arrived. %02X, %02X\n", (int) status_0, (int) status_1) );
+	TPI_DEBUG_PRINT(("MhlTx: STATUS Arrived.%02X,%02X\n", (int) status_0, (int) status_1));
 
-	if(BIT_0 & status_0)
-	{
+	if (BIT_0 & status_0)
 		mhlTxConfig.mscState	 = MSC_STATE_BEGIN;
-	}
 	mhlTxConfig.status_0 = status_0;
 	mhlTxConfig.status_1 = status_1;
 }
 
-bool SiiMhlTxRcpSend( uint8_t rcpKeyCode )
+bool SiiMhlTxRcpSend(uint8_t rcpKeyCode)
 {
-	if((0 == (BIT_0 & mhlTxConfig.mscFeatureFlag)) ||
-		(MSC_STATE_RCP_READY != mhlTxConfig.mscState))
-	{
+	if ((0 == (BIT_0 & mhlTxConfig.mscFeatureFlag)) || (MSC_STATE_RCP_READY != mhlTxConfig.mscState))
 		return	false;
-	}
-	return	( MhlTxSendMscMsg ( MHL_MSC_MSG_RCP, rcpKeyCode ) );
+	return	(MhlTxSendMscMsg(MHL_MSC_MSG_RCP, rcpKeyCode));
 }
 
-bool SiiMhlTxRcpkSend( uint8_t rcpKeyCode )
+bool SiiMhlTxRcpkSend(uint8_t rcpKeyCode)
 {
-	return	( MhlTxSendMscMsg ( MHL_MSC_MSG_RCPK, rcpKeyCode ) );
+	return	(MhlTxSendMscMsg(MHL_MSC_MSG_RCPK, rcpKeyCode));
 }
 
-static	bool SiiMhlTxRapkSend( void )
+static	bool SiiMhlTxRapkSend(void)
 {
-	return	( MhlTxSendMscMsg ( MHL_MSC_MSG_RAPK, 0 ) );
+	return	(MhlTxSendMscMsg(MHL_MSC_MSG_RAPK, 0));
 }
 
-bool SiiMhlTxRcpeSend( uint8_t rcpeErrorCode )
+bool SiiMhlTxRcpeSend(uint8_t rcpeErrorCode)
 {
-	return( MhlTxSendMscMsg ( MHL_MSC_MSG_RCPE, rcpeErrorCode ) );
+	return	(MhlTxSendMscMsg(MHL_MSC_MSG_RCPE, rcpeErrorCode));
 }
 
-bool SiiMhlTxReadDevcap( uint8_t offset )
+bool SiiMhlTxReadDevcap(uint8_t offset)
 {
 	cbus_req_t	req;
 
 	req.command     = mhlTxConfig.mscLastCommand = MHL_READ_DEVCAP;
 	req.offsetData  = mhlTxConfig.mscLastOffset  = offset;
-	return(SiiMhlTxDrvSendCbusCommand( &req  ));
+	return	(SiiMhlTxDrvSendCbusCommand(&req));
 }
 
-static bool MhlTxSendMscMsg ( uint8_t command, uint8_t cmdData )
+static bool MhlTxSendMscMsg(uint8_t command, uint8_t cmdData)
 {
 	cbus_req_t	req;
 	uint8_t		ccode;
 
 	req.command     = MHL_MSC_MSG;
-	req.msgData[0]  = mhlTxConfig.mscMsgLastCommand = command;
-	req.msgData[1]  = mhlTxConfig.mscMsgLastData    = cmdData;
-
-	ccode = SiiMhlTxDrvSendCbusCommand( &req  );
-	return( (bool) ccode );
-
+	req.payload_u.msgData[0]  = mhlTxConfig.mscMsgLastCommand = command;
+	req.payload_u.msgData[1]  = mhlTxConfig.mscMsgLastData    = cmdData;
+	ccode = SiiMhlTxDrvSendCbusCommand(&req);
+	return	((bool)ccode);
 }
 
-void	SiiMhlTxNotifyConnection( bool mhlConnected )
+void	SiiMhlTxNotifyConnection(bool mhlConnected)
 {
-
 	mhlTxConfig.mhlConnectionEvent = true;
 
 	mhlTxConfig.mscState	 = MSC_STATE_IDLE;
-	if(mhlConnected)
-	{
+	if (mhlConnected) {
 		mhlTxConfig.mhlConnected = MHL_TX_EVENT_CONNECTION;
-	}
-	else
-	{
+		mhlTxConfig.mhlHpdRSENflags |= MHL_RSEN;
+		SiiMhlTxTmdsEnable();
+		SiiMhlTxSendLinkMode();
+	} else {
 		mhlTxConfig.mhlConnected = MHL_TX_EVENT_DISCONNECTION;
+		mhlTxConfig.mhlHpdRSENflags &= ~MHL_RSEN;
 	}
 }
 
-void	SiiMhlTxNotifyDsHpdChange( uint8_t dsHpdStatus )
+void	SiiMhlTxNotifyDsHpdChange(uint8_t dsHpdStatus)
 {
-	if( 0 == dsHpdStatus )
-	{
-		/* Mark this by Michael
-	    TPI_DEBUG_PRINT(("MhlTx: Disable TMDS\n"));
-		SiiMhlTxDrvTmdsControl( false );*/
-	}
-	else
-	{
-	    TPI_DEBUG_PRINT(("MhlTx: Enable TMDS\n"));
-		SiiMhlTxDrvTmdsControl( true );
+	if (0 == dsHpdStatus) {
+		TPI_DEBUG_PRINT(("MhlTx: Disable TMDS - fake\n"));
+		/*mhlTxConfig.mhlHpdRSENflags &= ~MHL_HPD;*/
+		/*SiiMhlTxDrvTmdsControl(false);*/
+	} else {
+		TPI_DEBUG_PRINT(("MhlTx: Enable TMDS\n"));
+		TPI_DEBUG_PRINT(("MhlTx: DsHPD ON\n"));
+		mhlTxConfig.mhlHpdRSENflags |= MHL_HPD;
+		SiiMhlTxTmdsEnable();
 	}
 }
 
-static void	MhlTxResetStates( void )
+static void MhlTxResetStates(void)
 {
+#if 0
 	mhlTxConfig.mhlConnectionEvent	= false;
 	mhlTxConfig.mhlConnected		= MHL_TX_EVENT_DISCONNECTION;
 	mhlTxConfig.mscMsgArrived		= false;
 	mhlTxConfig.mscState			= MSC_STATE_IDLE;
+#endif
+
+	mhlTxConfig.mhlConnectionEvent	= false;
+	mhlTxConfig.mhlConnected		= MHL_TX_EVENT_DISCONNECTION;
+	mhlTxConfig.mhlHpdRSENflags    &= ~(MHL_RSEN | MHL_HPD);
+	mhlTxConfig.mscMsgArrived		= false;
+
+	mhlTxConfig.status_0            = 0;
+	mhlTxConfig.status_1            = 0;
+	mhlTxConfig.connectedReady      = 0;
+	mhlTxConfig.linkMode            = 3;
+	mhlTxConfig.cbusReferenceCount  = 0;
+	mhlTxConfig.miscFlags           = 0;
+	mhlTxConfig.mscLastCommand      = 0;
+	mhlTxConfig.mscMsgLastCommand   = 0;
 }
-extern void sii9234_send_keyevent(uint32_t key, uint32_t type);
 static uint8_t ProcessRcpKeyCode(uint8_t rcpKeyCode)
 {
-    uint8_t rcpkStatus = rcpKeyCode;
-
-    TPI_DEBUG_PRINT(("RCP Key Code: 0x%02X\n", (int)rcpKeyCode));
-
-    switch ( rcpKeyCode )
-    {
-        case MHD_RCP_CMD_SELECT:
-			TPI_DEBUG_PRINT(( "\n MHD_RCP_CMD_SELECT received %d\n\n", (int)rcpKeyCode ));
-			sii9234_send_keyevent(KEY_ENTER, 0);
-			break;
-        case MHD_RCP_CMD_UP:
-			TPI_DEBUG_PRINT(( "\n MHD_RCP_CMD_UP received %d\n\n", (int)rcpKeyCode ));
-			sii9234_send_keyevent(KEY_UP, 0);
-			break;
-         case MHD_RCP_CMD_DOWN:
-			TPI_DEBUG_PRINT(( "\n MHD_RCP_CMD_DOWN received %d\n\n", (int)rcpKeyCode ));
-			sii9234_send_keyevent(KEY_DOWN, 0);
-			break;
-        case MHD_RCP_CMD_LEFT:
-			TPI_DEBUG_PRINT(( "\n MHD_RCP_CMD_LEFT received %d\n\n", (int)rcpKeyCode ));
-			sii9234_send_keyevent(KEY_LEFT, 0);
-			break;
-         case MHD_RCP_CMD_RIGHT:
-			TPI_DEBUG_PRINT(( "\n MHD_RCP_CMD_RIGHT received %d\n\n", (int)rcpKeyCode ));
-			sii9234_send_keyevent(KEY_RIGHT, 0);
-			break;
-         case MHD_RCP_CMD_ROOT_MENU:
-			TPI_DEBUG_PRINT(( "\n MHD_RCP_CMD_ROOT_MENU received %d\n\n", (int)rcpKeyCode ));
-			sii9234_send_keyevent(KEY_HOME, 0);
-			break;
-         case MHD_RCP_CMD_EXIT:
-			TPI_DEBUG_PRINT(( "\n MHD_RCP_CMD_EXIT received %d\n\n", (int)rcpKeyCode ));
-			sii9234_send_keyevent(KEY_BACK, 0);
-			break;
-        default:
-            break;
+	uint8_t rcpkStatus = rcpKeyCode;
+	TPI_DEBUG_PRINT(("RCP Key Code: 0x%02X\n", (int)rcpKeyCode));
+	switch (rcpKeyCode) {
+	case MHD_RCP_CMD_SELECT:
+		TPI_DEBUG_PRINT(("\n MHD_RCP_CMD_SELECT received %d\n\n", (int)rcpKeyCode));
+		sii9234_send_keyevent(KEY_ENTER, 0);
+		break;
+	case MHD_RCP_CMD_UP:
+		TPI_DEBUG_PRINT(("\n MHD_RCP_CMD_UP received %d\n\n", (int)rcpKeyCode));
+		sii9234_send_keyevent(KEY_UP, 0);
+		break;
+	case MHD_RCP_CMD_DOWN:
+		TPI_DEBUG_PRINT(("\n MHD_RCP_CMD_DOWN received %d\n\n", (int)rcpKeyCode));
+		sii9234_send_keyevent(KEY_DOWN, 0);
+		break;
+	case MHD_RCP_CMD_LEFT:
+		TPI_DEBUG_PRINT(("\n MHD_RCP_CMD_LEFT received %d\n\n", (int)rcpKeyCode));
+		sii9234_send_keyevent(KEY_LEFT, 0);
+		break;
+	case MHD_RCP_CMD_RIGHT:
+		TPI_DEBUG_PRINT(("\n MHD_RCP_CMD_RIGHT received %d\n\n", (int)rcpKeyCode));
+		sii9234_send_keyevent(KEY_RIGHT, 0);
+		break;
+	case MHD_RCP_CMD_ROOT_MENU:
+		TPI_DEBUG_PRINT(("\n MHD_RCP_CMD_ROOT_MENU received %d\n\n", (int)rcpKeyCode));
+		sii9234_send_keyevent(KEY_HOME, 0);
+		break;
+	case MHD_RCP_CMD_EXIT:
+		TPI_DEBUG_PRINT(("\n MHD_RCP_CMD_EXIT received %d\n\n", (int)rcpKeyCode));
+		sii9234_send_keyevent(KEY_BACK, 0);
+		break;
+	default:
+		break;
     }
 
-    return( rcpkStatus );
+    return (rcpkStatus);
 }
 
-void    ProcessRcp( uint8_t event, uint8_t eventParameter)
+void    ProcessRcp(uint8_t event, uint8_t eventParameter)
 {
-        uint8_t         rcpKeyCode;
+	uint8_t         rcpKeyCode;
 
-        switch( event )
-        {
-                case    MHL_TX_EVENT_DISCONNECTION:
-                        TPI_DEBUG_PRINT(("App: Got event = MHL_TX_EVENT_DISCONNECTION\n"));
-                        break;
-
-                case    MHL_TX_EVENT_CONNECTION:
-                        TPI_DEBUG_PRINT(("App: Got event = MHL_TX_EVENT_CONNECTION\n"));
-                        break;
-
-                case    MHL_TX_EVENT_RCP_READY:
-
-                        rcpKeyCode = APP_DEMO_RCP_SEND_KEY_CODE;
-
-                        TPI_DEBUG_PRINT(("App: Got event = MHL_TX_EVENT_RCP_READY...Sending RCP (%02X)\n", (int) rcpKeyCode));
-
-
-                        if( (0 == (BIT_0 & eventParameter)) )
-                        {
-                                TPI_DEBUG_PRINT(( "App: Peer does NOT support RCP\n" ));
-                        }
-                        if( (0 == (BIT_1 & eventParameter)) )
-                        {
-                                TPI_DEBUG_PRINT(( "App: Peer does NOT support RAP\n" ));
-                        }
-                        if( (0 == (BIT_2 & eventParameter)) )
-                        {
-                                TPI_DEBUG_PRINT(( "App: Peer does NOT support WRITE_BURST\n" ));
-                        }
-
-
-                        if( SiiMhlTxRcpSend( rcpKeyCode ))
-                        {
-                                TPI_DEBUG_PRINT(("App: SiiMhlTxRcpSend (%02X)\n", (int) rcpKeyCode));
-                        }
-                        else
-                        {
-                                TPI_DEBUG_PRINT(("App: SiiMhlTxRcpSend (%02X) Returned Failure.\n", (int) rcpKeyCode));
-                        }
-                        break;
-
-                case    MHL_TX_EVENT_RCP_RECEIVED:
-			TPI_DEBUG_PRINT(("App: Received an RCP key code = %02X\n", eventParameter ));
-			rcpKeyCode = ProcessRcpKeyCode(eventParameter);
-                        SiiMhlTxRcpkSend((int) rcpKeyCode);
-                        break;
-
-                case    MHL_TX_EVENT_RCPK_RECEIVED:
-                        TPI_DEBUG_PRINT(("App: Received an RCPK = %02X\n", (int)eventParameter));
-                        break;
-
-                case    MHL_TX_EVENT_RCPE_RECEIVED:
-                        TPI_DEBUG_PRINT(("App: Received an RCPE = %02X\n", (int)eventParameter));
-                        break;
-
-                default:
-			TPI_DEBUG_PRINT(("App: Got event = %02X, eventParameter = %02X\n", (int)event, (int)eventParameter));
-                        break;
-        }
+	switch (event) {
+	case    MHL_TX_EVENT_DISCONNECTION:
+		TPI_DEBUG_PRINT(("App: Got event = MHL_TX_EVENT_DISCONNECTION\n"));
+		break;
+	case    MHL_TX_EVENT_CONNECTION:
+		TPI_DEBUG_PRINT(("App: Got event = MHL_TX_EVENT_CONNECTION\n"));
+		break;
+	case    MHL_TX_EVENT_RCP_READY:
+		rcpKeyCode = APP_DEMO_RCP_SEND_KEY_CODE;
+		TPI_DEBUG_PRINT(("App: Got event = MHL_TX_EVENT_RCP_READY...Sending RCP (%02X)\n", (int) rcpKeyCode));
+		if ((0 == (BIT_0 & eventParameter)))
+			TPI_DEBUG_PRINT(("App: Peer does NOT support RCP\n"));
+		if ((0 == (BIT_1 & eventParameter)))
+			TPI_DEBUG_PRINT(("App: Peer does NOT support RAP\n"));
+		if ((0 == (BIT_2 & eventParameter)))
+			TPI_DEBUG_PRINT(("App: Peer does NOT support WRITE_BURST\n"));
+		if (SiiMhlTxRcpSend(rcpKeyCode)) {
+			TPI_DEBUG_PRINT(("App: SiiMhlTxRcpSend (%02X)\n", (int) rcpKeyCode));
+			TPI_DEBUG_PRINT(("Stupid coding check\n"));
+		} else
+			TPI_DEBUG_PRINT(("App: SiiMhlTxRcpSend (%02X) Returned Failure.\n", (int) rcpKeyCode));
+		break;
+	case    MHL_TX_EVENT_RCP_RECEIVED:
+		TPI_DEBUG_PRINT(("App: Received an RCP key code = %02X\n", eventParameter));
+		rcpKeyCode = ProcessRcpKeyCode(eventParameter);
+		SiiMhlTxRcpkSend((int) rcpKeyCode);
+		break;
+	case    MHL_TX_EVENT_RCPK_RECEIVED:
+		TPI_DEBUG_PRINT(("App: Received an RCPK = %02X\n", (int)eventParameter));
+		break;
+	case    MHL_TX_EVENT_RCPE_RECEIVED:
+		TPI_DEBUG_PRINT(("App: Received an RCPE = %02X\n", (int)eventParameter));
+		break;
+	default:
+		TPI_DEBUG_PRINT(("App: Got event = %02X, eventParameter = %02X\n", (int)event, (int)eventParameter));
+		break;
+	}
 }
-

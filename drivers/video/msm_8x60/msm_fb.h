@@ -133,7 +133,8 @@ struct msm_fb_data_type {
 	int (*lut_update) (struct fb_info *info,
 			      struct fb_cmap *cmap);
 	int (*do_histogram) (struct fb_info *info,
-			      struct mdp_histogram *hist);
+			      struct mdp_histogram *hist, struct msm_fb_data_type *mfd);
+	int (*get_gamma_curvy) (struct gamma_curvy *gamma_tbl, struct gamma_curvy *gc);
 	void *cursor_buf;
 	void *cursor_buf_phys;
 
@@ -167,6 +168,10 @@ struct msm_fb_data_type {
 
 	struct clk *ebi1_clk;
 	boolean dma_update_flag;
+	struct timer_list msmfb_no_update_notify_timer;
+	struct completion msmfb_update_notify;
+	struct completion msmfb_no_update_notify;
+	u32 ov_start, ov_end;
 
 #ifdef CONFIG_FB_MSM_OVERLAY
 	uint32_t	blt_base, blt_size;
@@ -185,6 +190,9 @@ struct msm_fb_data_type {
 	struct timer_list self_refresh_timer;
 #endif
 	bool during_pwr_off_seq;
+#if defined CONFIG_FB_MSM_MDP_ABL
+	boolean enable_abl;
+#endif
 };
 
 struct dentry *msm_fb_get_debugfs_root(void);

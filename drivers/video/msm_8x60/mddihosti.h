@@ -134,9 +134,11 @@ do { \
  * but, ensure write goes out to memory
  */
 #define mddi_flush_cache_lines(addr_start, num_bytes)  \
+    do { \
     (void) addr_start; \
     (void) num_bytes;  \
-    memory_barrier()
+    memory_barrier() \
+    } while (0)
 
 /* Since this translates to Remote Procedure Calls to check on clock status
 * just use a local variable to keep track of io_clock */
