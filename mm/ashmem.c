@@ -30,6 +30,10 @@
 #include <linux/shmem_fs.h>
 #include <linux/ashmem.h>
 
+#ifdef CONFIG_QCT_ASHMEM_CACHE_FLUSH
+#include <asm/cacheflush.h>
+#endif
+
 #define ASHMEM_NAME_PREFIX "dev/ashmem/"
 #define ASHMEM_NAME_PREFIX_LEN (sizeof(ASHMEM_NAME_PREFIX) - 1)
 #define ASHMEM_FULL_NAME_LEN (ASHMEM_NAME_LEN + ASHMEM_NAME_PREFIX_LEN)
@@ -630,67 +634,208 @@ static int ashmem_pin_unpin(struct ashmem_area *asma, unsigned long cmd,
 }
 
 #ifdef CONFIG_OUTER_CACHE
+#ifdef CONFIG_QCT_ASHMEM_CACHE_FLUSH
 static unsigned int virtaddr_to_physaddr(unsigned int virtaddr)
+#else
+static unsigned int kgsl_virtaddr_to_physaddr(unsigned int virtaddr)
+#endif
 {
 	unsigned int physaddr = 0;
 	pgd_t *pgd_ptr = NULL;
 	pmd_t *pmd_ptr = NULL;
 	pte_t *pte_ptr = NULL, pte;
 
-        spin_lock(&current->mm->page_table_lock);
 	pgd_ptr = pgd_offset(current->mm, virtaddr);
 	if (pgd_none(*pgd) || pgd_bad(*pgd)) {
-		pr_err("Failed to convert virtaddr %x to pgd_ptr\n",
-                       virtaddr);
-                goto done;
+		pr_info
+		    ("Invalid pgd entry found while trying to convert virtual "
+		     "address to physical\n");
+		return 0;
 	}
 
 	pmd_ptr = pmd_offset(pgd_ptr, virtaddr);
 	if (pmd_none(*pmd_ptr) || pmd_bad(*pmd_ptr)) {
-		pr_err("Failed to convert pgd_ptr %p to pmd_ptr\n",
-                        (void *)pgd_ptr);
-                goto done;
+		pr_info
+		    ("Invalid pmd entry found while trying to convert virtual "
+		     "address to physical\n");
+		return 0;
 	}
 
 	pte_ptr = pte_offset_map(pmd_ptr, virtaddr);
 	if (!pte_ptr) {
-		pr_err("Failed to convert pmd_ptr %p to pte_ptr\n",
-                        (void *)pmd_ptr);
-                goto done;
+		pr_info
+		    ("Unable to map pte entry while trying to convert virtual "
+		     "address to physical\n");
+		return 0;
 	}
 	pte = *pte_ptr;
 	physaddr = pte_pfn(pte);
 	pte_unmap(pte_ptr);
-done:
-        spin_unlock(&current->mm->page_table_lock);
 	physaddr <<= PAGE_SHIFT;
 	return physaddr;
 }
 #endif
 
-static int ashmem_cache_op(struct ashmem_area *asma,
-        void (*cache_func)(unsigned long vstart, unsigned long length,
-                                unsigned long pstart))
+#ifdef CONFIG_QCT_ASHMEM_CACHE_FLUSH
+
+//static int ashmem_flush_cache_range(struct ashmem_area *asma)
+/* Cache flush routines similar to the ones used for pmem */
+#define CACHE_LINE_SIZE 32
+
+static int ashmem_flush_caches(unsigned long vstart,
+	unsigned long length)
 {
-#ifdef CONFIG_OUTER_CACHE
 	unsigned long vaddr;
-#endif
-	mutex_lock(&ashmem_mutex);
-#ifndef CONFIG_OUTER_CACHE
-        cache_func(asma->vm_start, asma->size, 0);
-#else
-        for (vaddr = asma->vm_start; vaddr < asma->vm_start + asma->size;
-                vaddr += PAGE_SIZE) {
+
+	for (vaddr = vstart; vaddr < vstart + length; vaddr += CACHE_LINE_SIZE)
+		asm ("mcr p15, 0, %0, c7, c14, 1" : : "r" (vaddr));
+#ifdef CONFIG_OUTER_CACHE
+	for (vaddr = vstart; vaddr < vstart + length; vaddr += PAGE_SIZE) {
 		unsigned long physaddr;
 		physaddr = virtaddr_to_physaddr(vaddr);
-                if (!physaddr)
-                        return -EINVAL;
-                cache_func(vaddr, PAGE_SIZE, physaddr);
+		if (!physaddr) {
+			pr_err("ashmem_flush_caches failed to convert "
+				"virtual address to valid physical address\n");
+			return -EINVAL;
+		}
+		outer_flush_range(physaddr, pstart + PAGE_SIZE);
 	}
 #endif
+	asm ("mcr p15, 0, %0, c7, c10, 4" : : "r" (0));
+	asm ("mcr p15, 0, %0, c7, c5, 0" : : "r" (0));
+
+	__flush_axi_bus_buffer();
+	return 0;
+}
+
+static int ashmem_clean_caches(unsigned long vstart,
+	unsigned long length)
+{
+	unsigned long vaddr;
+
+	for (vaddr = vstart; vaddr < vstart + length; vaddr += CACHE_LINE_SIZE)
+		asm ("mcr p15, 0, %0, c7, c10, 1" : : "r" (vaddr));
+#ifdef CONFIG_OUTER_CACHE
+//	unsigned long end;
+	for (vaddr = vstart; vaddr < vstart + length; vaddr += PAGE_SIZE) {
+		unsigned long physaddr;
+		physaddr = virtaddr_to_physaddr(vaddr);
+		if (!physaddr) {
+			pr_err("ashmem_clean_caches failed to convert "
+				"virtual address to valid physical address\n");
+			return -EINVAL;
+		}
+		outer_clean_range(physaddr, pstart + PAGE_SIZE);
+	}
+#endif
+	asm ("mcr p15, 0, %0, c7, c10, 4" : : "r" (0));
+	asm ("mcr p15, 0, %0, c7, c5, 0" : : "r" (0));
+
+	__flush_axi_bus_buffer();
+	return 0;
+}
+
+static int ashmem_invalidate_caches(unsigned long vstart,
+	unsigned long length)
+{
+	unsigned long vaddr;
+
+	for (vaddr = vstart; vaddr < vstart + length; vaddr += CACHE_LINE_SIZE)
+		asm ("mcr p15, 0, %0, c7, c6, 1" : : "r" (vaddr));
+#ifdef CONFIG_OUTER_CACHE
+	for (vaddr = vstart; vaddr < vstart + length; vaddr += PAGE_SIZE) {
+		unsigned long physaddr;
+		physaddr = virtaddr_to_physaddr(vaddr);
+		if (!physaddr) {
+			pr_err("ashmem_invalidate_caches failed to convert "
+				"virtual address to valid physical address\n");
+			return -EINVAL;
+		}
+		outer_inv_range(physaddr, pstart + PAGE_SIZE);
+	}
+#endif
+	asm ("mcr p15, 0, %0, c7, c10, 4" : : "r" (0));
+	asm ("mcr p15, 0, %0, c7, c5, 0" : : "r" (0));
+
+	__flush_axi_bus_buffer();
+	return 0;
+}
+
+static int ashmem_flush_cache_range(struct ashmem_area *asma, unsigned int cmd)
+{
+	unsigned long addr;
+	unsigned int size, result = 0;
+
+	mutex_lock(&ashmem_mutex);
+
+	size = asma->size;
+	addr = asma->vm_start;
+	if (!addr || (addr & (PAGE_SIZE - 1)) || !size ||
+		(size & (PAGE_SIZE - 1))) {
+		result =  -EINVAL;
+		goto done;
+	}
+	switch (cmd) {
+	case ASHMEM_CACHE_FLUSH_RANGE:
+		result = ashmem_flush_caches(addr, size);
+		break;
+	case ASHMEM_CACHE_CLEAN_RANGE:
+		result = ashmem_clean_caches(addr, size);
+		break;
+	case ASHMEM_CACHE_INV_RANGE:
+		result = ashmem_invalidate_caches(addr, size);
+		break;
+	}
+	mb();
+done:
+	mutex_unlock(&ashmem_mutex);
+	return result;
+}
+
+#else
+static int ashmem_flush_cache_range(struct ashmem_area *asma)
+{
+#ifdef CONFIG_OUTER_CACHE
+	unsigned long end;
+#endif
+	unsigned long addr;
+	unsigned int size, result = 0;
+
+	mutex_lock(&ashmem_mutex);
+
+	size = asma->size;
+	addr = asma->vm_start;
+	if (!addr || (addr & (PAGE_SIZE - 1)) || !size ||
+		(size & (PAGE_SIZE - 1))) {
+		result =  -EINVAL;
+		goto done;
+	}
+	clean_caches( addr, size, 0);
+#ifdef CONFIG_OUTER_CACHE
+	for (end = addr; end < (addr + size); end += PAGE_SIZE) {
+		unsigned long physaddr;
+		physaddr = kgsl_virtaddr_to_physaddr(end);
+		if (!physaddr) {
+			result =  -EINVAL;
+			goto done;
+		}
+
+		switch (cmd) {
+		case ASHMEM_CACHE_FLUSH_RANGE:
+			outer_flush_range(physaddr, physaddr + PAGE_SIZE);
+			break;
+		case ASHMEM_CACHE_CLEAN_RANGE:
+			outer_clean_range(physaddr, physaddr + PAGE_SIZE);
+			break;
+		}
+	}
+	mb();
+#endif
+done:
 	mutex_unlock(&ashmem_mutex);
 	return 0;
 }
+#endif // CONFIG_QCT_ASHMEM_CACHE_FLUSH
 
 static long ashmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
@@ -733,19 +878,18 @@ static long ashmem_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		}
 		break;
 	case ASHMEM_CACHE_FLUSH_RANGE:
-		ret = ashmem_cache_op(asma, &clean_and_invalidate_caches);
-                break;
-        case ASHMEM_CACHE_CLEAN_RANGE:
-                ret = ashmem_cache_op(asma, &clean_caches);
-                break;
-        case ASHMEM_CACHE_INV_RANGE:
-                ret = ashmem_cache_op(asma, &invalidate_caches);
+#ifdef CONFIG_QCT_ASHMEM_CACHE_FLUSH
+	case ASHMEM_CACHE_CLEAN_RANGE:
+	case ASHMEM_CACHE_INV_RANGE:
+		ret = ashmem_flush_cache_range(asma, cmd);
+#else
+		ret = ashmem_flush_cache_range(asma);
+#endif
 		break;
 	}
 
 	return ret;
 }
-
 
 static int is_ashmem_file(struct file *file)
 {
