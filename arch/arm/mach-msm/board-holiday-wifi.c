@@ -1,15 +1,21 @@
-/* linux/arch/arm/mach-msm/board-holiday-wifi.c
+
+<!-- saved from url=(0094)http://git.tiamat-dev.com/8x60/htc-kernel-msm8x60/plain/arch/arm/mach-msm/board-holiday-wifi.c -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"></head><body><pre style="word-wrap: break-word; white-space: pre-wrap;">/* linux/arch/arm/mach-msm/board-holiday-wifi.c
 */
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/platform_device.h>
-#include <linux/delay.h>
-#include <linux/err.h>
-#include <asm/mach-types.h>
-#include <asm/gpio.h>
-#include <asm/io.h>
-#include <linux/skbuff.h>
-#include <linux/wifi_tiwlan.h>
+#include &lt;linux/kernel.h&gt;
+#include &lt;linux/init.h&gt;
+#include &lt;linux/platform_device.h&gt;
+#include &lt;linux/delay.h&gt;
+#include &lt;linux/err.h&gt;
+#include &lt;asm/mach-types.h&gt;
+#include &lt;asm/gpio.h&gt;
+#include &lt;asm/io.h&gt;
+#include &lt;linux/skbuff.h&gt;
+#ifdef CONFIG_BCM4329_PURE_ANDROID
+#include &lt;linux/wlan_plat.h&gt;
+#else
+#include &lt;linux/wifi_tiwlan.h&gt;
+#endif
 
 #include "board-holiday.h"
 
@@ -29,6 +35,8 @@ int holiday_wifi_get_mac_addr(unsigned char *buf);
 
 #define WLAN_SKB_BUF_NUM	16
 
+#define HW_OOB 1
+
 static struct sk_buff *wlan_static_skb[WLAN_SKB_BUF_NUM];
 
 typedef struct wifi_mem_prealloc_struct {
@@ -47,9 +55,9 @@ static void *holiday_wifi_mem_prealloc(int section, unsigned long size)
 {
 	if (section == PREALLOC_WLAN_NUMBER_OF_SECTIONS)
 		return wlan_static_skb;
-	if ((section < 0) || (section > PREALLOC_WLAN_NUMBER_OF_SECTIONS))
+	if ((section &lt; 0) || (section &gt; PREALLOC_WLAN_NUMBER_OF_SECTIONS))
 		return NULL;
-	if (wifi_mem_array[section].size < size)
+	if (wifi_mem_array[section].size &lt; size)
 		return NULL;
 	return wifi_mem_array[section].mem_ptr;
 }
@@ -58,13 +66,13 @@ int __init holiday_init_wifi_mem(void)
 {
 	int i;
 
-	for (i = 0; (i < WLAN_SKB_BUF_NUM); i++) {
-		if (i < (WLAN_SKB_BUF_NUM/2))
+	for (i = 0; (i &lt; WLAN_SKB_BUF_NUM); i++) {
+		if (i &lt; (WLAN_SKB_BUF_NUM/2))
 			wlan_static_skb[i] = dev_alloc_skb(4096);
 		else
 			wlan_static_skb[i] = dev_alloc_skb(8192);
 	}
-	for (i = 0; (i < PREALLOC_WLAN_NUMBER_OF_SECTIONS); i++) {
+	for (i = 0; (i &lt; PREALLOC_WLAN_NUMBER_OF_SECTIONS); i++) {
 		wifi_mem_array[i].mem_ptr = kmalloc(wifi_mem_array[i].size,
 							GFP_KERNEL);
 		if (wifi_mem_array[i].mem_ptr == NULL)
@@ -78,30 +86,33 @@ static struct resource holiday_wifi_resources[] = {
 		.name		= "bcm4329_wlan_irq",
 		.start		= MSM_GPIO_TO_INT(HOLIDAY_GPIO_WIFI_IRQ),
 		.end		= MSM_GPIO_TO_INT(HOLIDAY_GPIO_WIFI_IRQ),
-#ifdef HW_OOB
-		.flags		  = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL | IORESOURCE_IRQ_SHAREABLE,
+#ifdef CONFIG_BCM4329_PURE_ANDROID
+		.flags          = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHLEVEL | IORESOURCE_IRQ_SHAREABLE,
 #else
-		.flags		  = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHEDGE,
+		.flags          = IORESOURCE_IRQ | IORESOURCE_IRQ_LOWEDGE,
 #endif
 	},
 };
 
 static struct wifi_platform_data holiday_wifi_control = {
-	.set_power	  = holiday_wifi_power,
-	.set_reset	  = holiday_wifi_reset,
+	.set_power      = holiday_wifi_power,
+	.set_reset      = holiday_wifi_reset,
 	.set_carddetect = holiday_wifi_set_carddetect,
 	.mem_prealloc   = holiday_wifi_mem_prealloc,
 	.get_mac_addr	= holiday_wifi_get_mac_addr,
+#ifndef CONFIG_BCM4329_PURE_ANDROID
 	.dot11n_enable  = 1,
+	.cscan_enable	= 1,
+#endif
 };
 
 static struct platform_device holiday_wifi_device = {
-	.name		   = "bcm4329_wlan",
-	.id			 = 1,
+	.name           = "bcm4329_wlan",
+	.id             = 1,
 	.num_resources  = ARRAY_SIZE(holiday_wifi_resources),
-	.resource	   = holiday_wifi_resources,
-	.dev			= {
-		.platform_data = &holiday_wifi_control,
+	.resource       = holiday_wifi_resources,
+	.dev            = {
+		.platform_data = &amp;holiday_wifi_control,
 	},
 };
 
@@ -118,82 +129,82 @@ static unsigned holiday_wifi_update_nvs(char *str)
 		return -EINVAL;
 	ptr = get_wifi_nvs_ram();
 	/* Size in format LE assumed */
-	memcpy(&len, ptr + NVS_LEN_OFFSET, sizeof(len));
+	memcpy(&amp;len, ptr + NVS_LEN_OFFSET, sizeof(len));
 
 	/* the last bye in NVRAM is 0, trim it */
 	if (ptr[NVS_DATA_OFFSET + len - 1] == 0)
 		len -= 1;
 
-	if (ptr[NVS_DATA_OFFSET + len - 1] != '\n') {
+	if (ptr[NVS_DATA_OFFSET + len -1] != '\n') {
 		len += 1;
-		ptr[NVS_DATA_OFFSET + len - 1] = '\n';
+		ptr[NVS_DATA_OFFSET + len -1] = '\n';
 	}
 
 	strcpy(ptr + NVS_DATA_OFFSET + len, str);
 	len += strlen(str);
-	memcpy(ptr + NVS_LEN_OFFSET, &len, sizeof(len));
+	memcpy(ptr + NVS_LEN_OFFSET, &amp;len, sizeof(len));
 	return 0;
 }
 
 #ifdef HW_OOB
-static unsigned strip_nvs_param(char *param)
+static unsigned strip_nvs_param(char* param)
 {
-		unsigned char *nvs_data;
+        unsigned char *nvs_data;
 
-		unsigned param_len;
-		int start_idx, end_idx;
+        unsigned param_len;
+        int start_idx, end_idx;
 
-		unsigned char *ptr;
-		unsigned len;
+        unsigned char *ptr;
+        unsigned len;
 
-		if (!param)
-				return -EINVAL;
-		ptr = get_wifi_nvs_ram();
-		/* Size in format LE assumed */
-		memcpy(&len, ptr + NVS_LEN_OFFSET, sizeof(len));
+        if (!param)
+                return -EINVAL;
+        ptr = get_wifi_nvs_ram();
+        /* Size in format LE assumed */
+        memcpy(&amp;len, ptr + NVS_LEN_OFFSET, sizeof(len));
 
-		/* the last bye in NVRAM is 0, trim it */
-		if (ptr[NVS_DATA_OFFSET + len - 1] == 0)
-				len -= 1;
+        /* the last bye in NVRAM is 0, trim it */
+        if (ptr[NVS_DATA_OFFSET + len -1] == 0)
+                len -= 1;
 
-		nvs_data = ptr + NVS_DATA_OFFSET;
+        nvs_data = ptr + NVS_DATA_OFFSET;
 
-		param_len = strlen(param);
+        param_len = strlen(param);
 
-		/* search param */
-		for (start_idx = 0; start_idx < len - param_len; start_idx++) {
-				if (memcmp(&nvs_data[start_idx], param, param_len) == 0) {
-						break;
-				}
-		}
+        /* search param */
+        for (start_idx = 0; start_idx &lt; len - param_len; start_idx++) {
+                if (memcmp(&amp;nvs_data[start_idx], param, param_len) == 0) {
+                        break;
+                }
+        }
 
-		end_idx = 0;
-		if (start_idx < len - param_len) {
-				/* search end-of-line */
-				for (end_idx = start_idx + param_len; end_idx < len; end_idx++) {
-						if (nvs_data[end_idx] == '\n' || nvs_data[end_idx] == 0) {
-								break;
-						}
-				}
-		}
+        end_idx = 0;
+        if (start_idx &lt; len - param_len) {
+                /* search end-of-line */
+                for (end_idx = start_idx + param_len; end_idx &lt; len; end_idx++) {
+                        if (nvs_data[end_idx] == '\n' || nvs_data[end_idx] == 0) {
+                                break;
+                        }
+                }
+        }
 
-		if (start_idx < end_idx) {
-				/* move the remain data forward */
-				for (; end_idx + 1 < len; start_idx++, end_idx++) {
-						nvs_data[start_idx] = nvs_data[end_idx+1];
-				}
-				len = len - (end_idx - start_idx + 1);
-				memcpy(ptr + NVS_LEN_OFFSET, &len, sizeof(len));
-		}
-		return 0;
+        if (start_idx &lt; end_idx) {
+                /* move the remain data forward */
+                for (; end_idx + 1 &lt; len; start_idx++, end_idx++) {
+                        nvs_data[start_idx] = nvs_data[end_idx+1];
+                }
+                len = len - (end_idx - start_idx + 1);
+                memcpy(ptr + NVS_LEN_OFFSET, &amp;len, sizeof(len));
+        }
+        return 0;
 }
 #endif
 
-#define WIFI_MAC_PARAM_STR	 "macaddr="
-#define WIFI_MAX_MAC_LEN	   17 /* XX:XX:XX:XX:XX:XX */
+#define WIFI_MAC_PARAM_STR     "macaddr="
+#define WIFI_MAX_MAC_LEN       17 /* XX:XX:XX:XX:XX:XX */
 
 static uint
-get_mac_from_wifi_nvs_ram(char *buf, unsigned int buf_len)
+get_mac_from_wifi_nvs_ram(char* buf, unsigned int buf_len)
 {
 	unsigned char *nvs_ptr;
 	unsigned char *mac_ptr;
@@ -219,12 +230,12 @@ get_mac_from_wifi_nvs_ram(char *buf, unsigned int buf_len)
 
 		/* locate end-of-line */
 		len = 0;
-		while (mac_ptr[len] != '\r' && mac_ptr[len] != '\n' &&
+		while (mac_ptr[len] != '\r' &amp;&amp; mac_ptr[len] != '\n' &amp;&amp;
 			mac_ptr[len] != '\0') {
 			len++;
 		}
 
-		if (len > buf_len) {
+		if (len &gt; buf_len) {
 			len = buf_len;
 		}
 		memcpy(buf, mac_ptr, len);
@@ -243,14 +254,14 @@ int holiday_wifi_get_mac_addr(unsigned char *buf)
 	int i;
 
 	mac_len = get_mac_from_wifi_nvs_ram(mac, WIFI_MAX_MAC_LEN);
-	if (mac_len > 0) {
-		/* Mac address to pattern */
-		sscanf(mac, "%02x:%02x:%02x:%02x:%02x:%02x",
-		&macpattern[0], &macpattern[1], &macpattern[2],
-		&macpattern[3], &macpattern[4], &macpattern[5]
+	if (mac_len &gt; 0) {
+		//Mac address to pattern
+		sscanf( mac, "%02x:%02x:%02x:%02x:%02x:%02x",
+		&amp;macpattern[0], &amp;macpattern[1], &amp;macpattern[2],
+		&amp;macpattern[3], &amp;macpattern[4], &amp;macpattern[5]
 		);
 
-		for (i = 0; i < ETHER_ADDR_LEN; i++) {
+		for(i = 0; i &lt; ETHER_ADDR_LEN; i++) {
 			ether_mac_addr[i] = (u8)macpattern[i];
 		}
 	}
@@ -258,7 +269,7 @@ int holiday_wifi_get_mac_addr(unsigned char *buf)
 	memcpy(buf, ether_mac_addr, sizeof(ether_mac_addr));
 
 	printk("holiday_wifi_get_mac_addr = %02x %02x %02x %02x %02x %02x \n",
-		ether_mac_addr[0], ether_mac_addr[1], ether_mac_addr[2], ether_mac_addr[3], ether_mac_addr[4], ether_mac_addr[5]);
+		ether_mac_addr[0],ether_mac_addr[1],ether_mac_addr[2],ether_mac_addr[3],ether_mac_addr[4],ether_mac_addr[5]);
 
 	return 0;
 }
@@ -276,7 +287,8 @@ int __init holiday_wifi_init(void)
 	holiday_wifi_update_nvs("btc_params80=0\n");
 	holiday_wifi_update_nvs("btc_params6=30\n");
 	holiday_init_wifi_mem();
-	ret = platform_device_register(&holiday_wifi_device);
+	ret = platform_device_register(&amp;holiday_wifi_device);
 	return ret;
 }
 
+</pre></body><link rel="stylesheet" type="text/css" href="data:text/css,"></html>

@@ -1150,7 +1150,7 @@ CONFIG_WLAN=y
 # CONFIG_IWM is not set
 # CONFIG_LIBERTAS is not set
 CONFIG_BCMDHD=m
-CONFIG_BCMDHD_FW_PATH="/system/etc/firmware/fw_bcm4330.bin"
+CONFIG_BCMDHD_FW_PATH="/system/etc/firmware/fw_bcmdhd.bin"
 CONFIG_BCMDHD_NVRAM_PATH="/proc/calibration"
 # CONFIG_BCM4330B2 is not set
 # CONFIG_BCM4330_FW_PATH is not set
