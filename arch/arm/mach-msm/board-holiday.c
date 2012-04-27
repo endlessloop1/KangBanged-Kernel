@@ -1558,7 +1558,7 @@ static void __init msm8x60_init_dsps(void)
 #else /* CONFIG_FB_MSM_HDMI_MSM_PANEL */
 #define MSM_FB_SIZE roundup(MSM_FB_PRIM_BUF_SIZE + MSM_FB_DSUB_PMEM_ADDER, 4096)
 #endif /* CONFIG_FB_MSM_HDMI_MSM_PANEL */
-#define MSM_PMEM_SF_SIZE 0x1000000 /* 16 Mbytes */
+#define MSM_PMEM_SF_SIZE 0x4000000 /* 64 Mbytes */
 #define MSM_PMEM_RMT_STORAGE_SIZE 0x100000 /* 1 Mbytes */
 #define MSM_OVERLAY_BLT_SIZE   roundup(MSM_FB_PRIM_BUF_SIZE, 4096)
 
@@ -1578,11 +1578,11 @@ static void __init msm8x60_init_dsps(void)
 /* SMI PMEM Region, as the video core will use offset address */
 /* from the Firmware base */
 #define PMEM_KERNEL_SMI_BASE  (MSM_SMI_BASE)
-#define PMEM_KERNEL_SMI_SIZE  0x300000
+#define PMEM_KERNEL_SMI_SIZE  0x600000
 /* User space SMI PMEM Region for video core*/
 /* used for encoder, decoder input & output buffers  */
 #define MSM_PMEM_SMIPOOL_BASE (PMEM_KERNEL_SMI_BASE + PMEM_KERNEL_SMI_SIZE)
-#define MSM_PMEM_SMIPOOL_SIZE 0x3D00000
+#define MSM_PMEM_SMIPOOL_SIZE 0x3A00000
 
 static unsigned fb_size = MSM_FB_SIZE;
 static int __init fb_size_setup(char *p)
@@ -1935,7 +1935,7 @@ static void __init msm8x60_allocate_memory_regions(void)
 	pr_info("allocating %lu bytes at %p (%lx physical) for fb\n",
 		size, __va(MSM_FB_BASE), (unsigned long)MSM_FB_BASE);
 
-	msm_fb_resources[1].start = MSM_OVERLAY_BLT_BASE;
+	msm_fb_resources[1].start = MSM_OVERLAY_BLT_BASE + 0x10000000;;
 	msm_fb_resources[1].end = msm_fb_resources[1].start +
 		MSM_OVERLAY_BLT_SIZE - 1;
 	pr_info("allocating %lu bytes at %p (%lx physical) for "
@@ -1980,7 +1980,7 @@ static void __init msm8x60_allocate_memory_regions(void)
 
 	size = MSM_PMEM_AUDIO_SIZE;
 	if (size) {
-		android_pmem_audio_pdata.start = MSM_PMEM_AUDIO_BASE;
+		android_pmem_audio_pdata.start = MSM_PMEM_AUDIO_BASE + 0x10000000;
 		android_pmem_audio_pdata.size = size;
 		pr_info("allocating %lu bytes at %p (%lx physical) for audio "
 			"pmem arena\n", size, __va(MSM_PMEM_AUDIO_BASE),
@@ -1989,7 +1989,7 @@ static void __init msm8x60_allocate_memory_regions(void)
 
 	size = pmem_sf_size;
 	if (size) {
-		android_pmem_pdata.start = MSM_PMEM_SF_BASE;
+		android_pmem_pdata.start = MSM_PMEM_SF_BASE + 0x10000000;
 		android_pmem_pdata.size = size;
 		pr_info("allocating %lu bytes at %p (%lx physical) for sf "
 			"pmem arena\n", size, __va(MSM_PMEM_SF_BASE),
