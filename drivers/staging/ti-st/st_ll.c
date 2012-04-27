@@ -1,7 +1,8 @@
 /*
  *  Shared Transport driver
  *	HCI-LL module responsible for TI proprietary HCI_LL protocol
- *  Copyright (C) 2009 Texas Instruments
+ *  Copyright (C) 2009-2010 Texas Instruments
+ *  Author: Pavan Savoy <pavan_savoy@ti.com>
  *
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
@@ -19,34 +20,65 @@
  */
 
 #define pr_fmt(fmt) "(stll) :" fmt
-#include "st_ll.h"
+#include <linux/platform_device.h>
+#include <linux/skbuff.h>
+#include <linux/module.h>
+#include <linux/ti_wilink_st.h>
 
 /**********************************************************************/
 /* internal functions */
-static void send_ll_cmd(struct st_data_s *st_data,
-	unsigned char cmd)
+static void chip_pm_ctl(struct st_data_s *st_data, int request_awake)
+{
+	struct kim_data_s *kim_data;
+	struct ti_st_plat_data *pdata;
+	struct uart_state *state = st_data->tty->driver_data;	
+	struct uart_port *uport = state->uart_port;
+
+	/* handle platform specific PM */
+	kim_data = st_data->kim_data;
+	pdata = kim_data->kim_pdev->dev.platform_data;
+	if (request_awake) {
+		if (pdata->chip_awake) {
+			printk(KERN_INFO "[BT]REQ W\n");
+			pdata->chip_awake(uport);
+		}
+	} else {
+		if (pdata->chip_asleep) {
+			printk(KERN_INFO "[BT]REQ S\n");
+			pdata->chip_asleep(uport);
+		}
+	}
+}
+
+static void send_ll_cmd(struct st_data_s *st_data, unsigned char cmd)
 {
 
-	pr_info("%s: writing %x", __func__, cmd);
+	pr_debug("%s: writing %x", __func__, cmd);
 	st_int_write(st_data, &cmd, 1);
 	return;
 }
 
 static void ll_device_want_to_sleep(struct st_data_s *st_data)
 {
-	pr_info("%s", __func__);
+	pr_debug("%s", __func__);
 	/* sanity check */
 	if (st_data->ll_state != ST_LL_AWAKE)
 		pr_err("ERR hcill: ST_LL_GO_TO_SLEEP_IND"
-			  "in state %ld", st_data->ll_state);
+		       "in state %ld", st_data->ll_state);
 
 	send_ll_cmd(st_data, LL_SLEEP_ACK);
 	/* update state */
 	st_data->ll_state = ST_LL_ASLEEP;
+
+	/* Request CLK off */
+	chip_pm_ctl(st_data, 0);
 }
 
 static void ll_device_want_to_wakeup(struct st_data_s *st_data)
 {
+	/* Request CLK on */
+	chip_pm_ctl(st_data, 1);
+
 	/* diff actions in diff states */
 	switch (st_data->ll_state) {
 	case ST_LL_ASLEEP:
@@ -59,6 +91,7 @@ static void ll_device_want_to_wakeup(struct st_data_s *st_data)
 	case ST_LL_AWAKE:
 		/* duplicate wake_ind */
 		pr_err("duplicate wake_ind already AWAKE");
+		send_ll_cmd(st_data, LL_WAKE_UP_ACK);	/* send wake_ack */
 		break;
 	case ST_LL_AWAKE_TO_ASLEEP:
 		/* duplicate wake_ind */
@@ -90,6 +123,8 @@ void st_ll_disable(struct st_data_s *ll)
 void st_ll_wakeup(struct st_data_s *ll)
 {
 	if (likely(ll->ll_state != ST_LL_AWAKE)) {
+		/* Request CLK on */
+		chip_pm_ctl(ll, 1);
 		send_ll_cmd(ll, LL_WAKE_UP_IND);	/* WAKE_IND */
 		ll->ll_state = ST_LL_ASLEEP_TO_AWAKE;
 	} else {
@@ -101,35 +136,34 @@ void st_ll_wakeup(struct st_data_s *ll)
 /* called when ST Core wants the state */
 unsigned long st_ll_getstate(struct st_data_s *ll)
 {
-	pr_info(" returning state %ld", ll->ll_state);
+	pr_debug(" returning state %ld", ll->ll_state);
 	return ll->ll_state;
 }
 
 /* called from ST Core, when a PM related packet arrives */
-unsigned long st_ll_sleep_state(struct st_data_s *st_data,
-	unsigned char cmd)
+unsigned long st_ll_sleep_state(struct st_data_s *st_data, unsigned char cmd)
 {
 	switch (cmd) {
 	case LL_SLEEP_IND:	/* sleep ind */
-		pr_info("sleep indication recvd");
+		pr_debug("sleep indication recvd");
 		ll_device_want_to_sleep(st_data);
 		break;
 	case LL_SLEEP_ACK:	/* sleep ack */
 		pr_err("sleep ack rcvd: host shouldn't");
 		break;
 	case LL_WAKE_UP_IND:	/* wake ind */
-		pr_info("wake indication recvd");
+		pr_debug("wake indication recvd");
 		ll_device_want_to_wakeup(st_data);
 		break;
 	case LL_WAKE_UP_ACK:	/* wake ack */
-		pr_info("wake ack rcvd");
+		pr_debug("wake ack rcvd");
 		st_data->ll_state = ST_LL_AWAKE;
 		break;
 	default:
 		pr_err(" unknown input/state ");
-		return ST_ERR_FAILURE;
+		return -EINVAL;
 	}
-	return ST_SUCCESS;
+	return 0;
 }
 
 /* Called from ST CORE to initialize ST LL */

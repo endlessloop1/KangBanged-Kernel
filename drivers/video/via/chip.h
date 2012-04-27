@@ -71,9 +71,6 @@
 #define     UNICHROME_VX855         12
 #define     UNICHROME_VX855_DID     0x5122
 
-#define     UNICHROME_VX900         13
-#define     UNICHROME_VX900_DID     0x7122
-
 /**************************************************/
 /* Definition TMDS Trasmitter Information         */
 /**************************************************/
@@ -110,13 +107,16 @@
 struct tmds_chip_information {
 	int tmds_chip_name;
 	int tmds_chip_slave_addr;
+	int data_mode;
 	int output_interface;
 	int i2c_port;
+	int device_type;
 };
 
 struct lvds_chip_information {
 	int lvds_chip_name;
 	int lvds_chip_slave_addr;
+	int data_mode;
 	int output_interface;
 	int i2c_port;
 };
@@ -137,11 +137,21 @@ struct chip_information {
 	struct lvds_chip_information lvds_chip_info2;
 };
 
+struct crt_setting_information {
+	int iga_path;
+	int h_active;
+	int v_active;
+	int bpp;
+	int refresh_rate;
+};
+
 struct tmds_setting_information {
 	int iga_path;
 	int h_active;
 	int v_active;
 	int max_pixel_clock;
+	int max_hres;
+	int max_vres;
 };
 
 struct lvds_setting_information {
@@ -149,6 +159,9 @@ struct lvds_setting_information {
 	int h_active;
 	int v_active;
 	int bpp;
+	int refresh_rate;
+	int get_lcd_size_method;
+	int lcd_panel_id;
 	int lcd_panel_hres;
 	int lcd_panel_vres;
 	int display_method;
@@ -173,6 +186,7 @@ struct GFX_DPA_SETTING {
 };
 
 struct VT1636_DPA_SETTING {
+	int PanelSizeID;
 	u8 CLK_SEL_ST1;
 	u8 CLK_SEL_ST2;
 };

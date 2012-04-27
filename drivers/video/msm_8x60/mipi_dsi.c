@@ -40,7 +40,6 @@
 #include "mipi_dsi.h"
 
 #include <mach/panel_id.h>
-#include <mach/debug_display.h>
 
 #ifdef CONFIG_MSM_DSI_CLK_AUTO_CALCULATE
 static struct dsi_clk_desc dsicore_clk;
@@ -379,7 +378,7 @@ int mipi_dsi_phy_pll_config(u32 clk_rate)
 	}
 
 	if (dividers == divider_db + ARRAY_SIZE(divider_db)) {
-		PR_DISP_ERR("%s: request clk_rate, %u, not supported\n",
+		pr_err("%s: request clk_rate, %u, not supported\n",
 			__func__, clk_rate);
 		return -EINVAL;
 	}
@@ -458,7 +457,7 @@ int mipi_dsi_clk_div_config(uint8 bpp, uint8 lanes,
 	}
 
 	if (mnd_entry == mnd_table + ARRAY_SIZE(mnd_table)) {
-		PR_DISP_ERR("%s: requested Lanes, %u & BPP, %u, not supported\n",
+		pr_err("%s: requested Lanes, %u & BPP, %u, not supported\n",
 			__func__, lanes, bpp);
 		return -EINVAL;
 	}
@@ -571,27 +570,24 @@ void mipi_dsi_phy_init(int panel_ndx, struct msm_panel_info const *panel_info)
 		mipi_dsi_phy_pll_config(panel_info->clk_rate);
 }
 
+static void mipi_dsi_sw_reset(void)
+{
+	pr_info("[DISP] %s: ----- need to do soft reset! -----\n", __func__);
+	MIPI_OUTP(MIPI_DSI_BASE + 0x0200, 1);
+	MIPI_OUTP(MIPI_DSI_BASE + 0x0114, 1);
+	hr_msleep(10);
+	MIPI_OUTP(MIPI_DSI_BASE + 0x0114, 0);
+}
 atomic_t dsi_unset_cnt = ATOMIC_INIT(0);
 struct completion dsi_unset_comp;
 
 atomic_t need_soft_reset = ATOMIC_INIT(0);
-int mipi_dsi_reset_read(void)
-{
-	return atomic_read(&need_soft_reset);
-}
-
-void mipi_dsi_reset_set(int reset)
-{
-	atomic_set(&need_soft_reset, !!reset);
-}
-
 static int mipi_dsi_off(struct platform_device *pdev)
 {
 	int ret = 0;
 	uint32_t wait_time = 0;
 	struct msm_fb_data_type *mfd;
 	struct msm_panel_info *pinfo;
-	struct msm_fb_data_type* rtn_mfd;
 
 	mfd = platform_get_drvdata(pdev);
 	pinfo = &mfd->panel_info;
@@ -600,7 +596,7 @@ static int mipi_dsi_off(struct platform_device *pdev)
 		INIT_COMPLETION(dsi_unset_comp);
 		wait_time = wait_for_completion_timeout(&dsi_unset_comp, HZ);
 		if (!wait_time) {
-			PR_DISP_WARN("%s: time out while waiting dsi_unset_comp\n",
+			pr_warn("%s: time out while waiting dsi_unset_comp\n",
 				__func__);
 		}
 	}
@@ -619,12 +615,13 @@ static int mipi_dsi_off(struct platform_device *pdev)
 #endif
 	}
 
-	PR_DISP_INFO("%s+ \n", __func__);
+	pr_info("%s+ \n", __func__);
 
+	//mipi_status = 0;
 	ret = panel_next_off(pdev);
 
-	rtn_mfd = dsi_mutex_lock();
-	dsi_busy_check(rtn_mfd);
+	dsi_mutex_lock();
+	dsi_busy_check();
 
 	/* disbale dsi engine */
 	MIPI_OUTP(MIPI_DSI_BASE + 0x0000, 0);
@@ -640,10 +637,10 @@ static int mipi_dsi_off(struct platform_device *pdev)
 
 	mipi_dsi_disable_irq();
 #if 0 /*remove continuous clock */
-	wmb();
-	clk_mode  =  MIPI_INP(MIPI_DSI_BASE + 0x00A8);
-	MIPI_OUTP(MIPI_DSI_BASE + 0x00A8, clk_mode & ~(1<<28));
-	wmb();
+        wmb();
+        clk_mode  =  MIPI_INP(MIPI_DSI_BASE + 0x00A8);
+        MIPI_OUTP(MIPI_DSI_BASE + 0x00A8, clk_mode & ~(1<<28));
+        wmb();
 #endif
 
 	/* DSIPHY_PLL_CTRL_5 */
@@ -685,15 +682,14 @@ static int mipi_dsi_off(struct platform_device *pdev)
 	clk_disable(dsi_m_pclk);
 	clk_disable(dsi_s_pclk);
 	clk_disable(amp_pclk); /* clock for AHB-master to AXI */
-
-	dsi_mutex_unlock(rtn_mfd);
+	dsi_mutex_unlock();
 
 	if (atomic_read(&need_soft_reset) == 1) {
 		/* DSI soft reset */
 		mipi_dsi_sw_reset();
 		atomic_set(&need_soft_reset, 0);
 	}
-	PR_DISP_INFO("%s-\n", __func__);
+	pr_info("%s-\n", __func__);
 
 	return ret;
 }
@@ -714,7 +710,7 @@ static int mipi_dsi_on(struct platform_device *pdev)
 	bool sw_reset_status = false;
 
 	isr = MIPI_INP(MIPI_DSI_BASE + 0x010c);
-	PR_DISP_INFO("%s+, isr=0x%08x \n", __func__, isr);
+	pr_info("%s+, isr=0x%08x \n", __func__, isr);
 	mfd = platform_get_drvdata(pdev);
 	fbi = mfd->fbi;
 	var = &fbi->var;
@@ -806,22 +802,23 @@ static int mipi_dsi_on(struct platform_device *pdev)
 	mipi  = &mfd->panel_info.mipi;
 	mipi_dsi_host_init(mipi);
 
-	/* workaround for orise driver ic to exit ULP mode */
-	if (bfirsttime) {
-		if ((panel_type == PANEL_ID_SHR_SHARP_OTM_C2) ||
+	//workaround for orise driver ic to exit ULP mode
+	if( bfirsttime ) {
+		if(	(panel_type == PANEL_ID_SHR_SHARP_OTM_C2) ||
 			(panel_type == PANEL_ID_RIR_AUO_OTM_C2)   ||
 			(panel_type == PANEL_ID_HOY_SONY_OTM)	||
 			(panel_type == PANEL_ID_RIR_AUO_OTM_C3) ||
 			(panel_type == PANEL_ID_RIR_AUO_OTM) ||
 			(panel_type == PANEL_ID_RIR_SHARP_OTM) ||
-			(panel_type == PANEL_ID_SHR_SHARP_OTM)) {
-			MIPI_OUTP(MIPI_DSI_BASE + 0x00A8, MIPI_INP(MIPI_DSI_BASE + 0x00A8) | (1<<4)); /* enter */
+			(panel_type == PANEL_ID_SHR_SHARP_OTM) ) {
+			MIPI_OUTP(MIPI_DSI_BASE + 0x00A8, MIPI_INP(MIPI_DSI_BASE + 0x00A8) | (1<<4)); //enter
 			wmb();
-			MIPI_OUTP(MIPI_DSI_BASE + 0x00A8, MIPI_INP(MIPI_DSI_BASE + 0x00A8) | (1<<12)); /* leave */
+			MIPI_OUTP(MIPI_DSI_BASE + 0x00A8, MIPI_INP(MIPI_DSI_BASE + 0x00A8) | (1<<12)); //leave
 		}
 		bfirsttime = false;
 	}
 
+	//mipi_dsi_cmd_bta_sw_trigger(); /* clean up ack_err_status */
 #if 0 /*remove continuous clock */
 	wmb();
 	clk_mode  =  MIPI_INP(MIPI_DSI_BASE + 0x00A8);
@@ -835,9 +832,9 @@ static int mipi_dsi_on(struct platform_device *pdev)
 
 	ret = panel_next_on(pdev);
 
-	/* errors happen while sending MIPI commands */
-	if (panel_type == PANEL_ID_HOY_SONY_OTM) {
-		if (!sw_reset_status && atomic_read(&need_soft_reset)) {
+	//errors happen while sending MIPI commands
+	if(panel_type == PANEL_ID_HOY_SONY_OTM) {
+		if( !sw_reset_status && atomic_read(&need_soft_reset)) {
 			mipi_dsi_sw_reset();
 			atomic_set(&need_soft_reset, 0);
 		}
@@ -851,7 +848,7 @@ static int mipi_dsi_on(struct platform_device *pdev)
 				if (gpio_request(vsync_gpio, "MDP_VSYNC") == 0)
 					gpio_direction_input(vsync_gpio);
 				else
-					PR_DISP_ERR("%s: unable to request gpio=%d\n",
+					pr_err("%s: unable to request gpio=%d\n",
 						__func__, vsync_gpio);
 			}
 
@@ -866,7 +863,8 @@ static int mipi_dsi_on(struct platform_device *pdev)
 		clk_enable(mfd->ebi1_clk);
 #endif
 
-	PR_DISP_INFO("%s-\n", __func__);
+	//mipi_status = 1;
+	pr_info("%s-\n", __func__);
 
 	return ret;
 }
@@ -929,7 +927,7 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 
 		if (mipi_dsi_pdata) {
 			vsync_gpio = mipi_dsi_pdata->vsync_gpio;
-			PR_DISP_INFO("%s: vsync_gpio=%d\n", __func__, vsync_gpio);
+			pr_info("%s: vsync_gpio=%d\n", __func__, vsync_gpio);
 		}
 
 		mipi_dsi_resource_initialized = 1;
@@ -1033,12 +1031,14 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 		bpp = 3;		/* Default format set to RGB888 */
 
 	if (mfd->panel_info.type == MIPI_VIDEO_PANEL) {
-		if (lanes > 0) {
+		if (mfd->panel_info.clk_rate)
+			pll_divider_config.clk_rate = mfd->panel_info.clk_rate;
+		else if (lanes > 0) {
 			pll_divider_config.clk_rate =
 			((h_period * v_period * (mipi->frame_rate) * bpp * 8)
 			   / lanes);
 		} else {
-			PR_DISP_ERR("%s: forcing mipi_dsi lanes to 1\n", __func__);
+			pr_err("%s: forcing mipi_dsi lanes to 1\n", __func__);
 			pll_divider_config.clk_rate =
 				(h_period * v_period
 					 * (mipi->frame_rate) * bpp * 8);
@@ -1048,7 +1048,7 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 
 
 	rc = mipi_dsi_clk_div_config(bpp, lanes, &dsi_pclk_rate);
-	PR_DISP_INFO("%s:bpp=>%d, lanes=>%d, dsi_pclk_rate=>%d", __func__, bpp, lanes, dsi_pclk_rate);
+	pr_info("%s:bpp=>%d, lanes=>%d, dsi_pclk_rate=>%d", __func__, bpp, lanes, dsi_pclk_rate);
 	if (rc)
 		goto mipi_dsi_probe_err;
 

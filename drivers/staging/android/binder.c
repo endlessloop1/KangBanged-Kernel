@@ -782,7 +782,7 @@ static struct binder_buffer *binder_alloc_buf(struct binder_proc *proc,
 	    proc->free_async_space < size + sizeof(struct binder_buffer)) {
 		binder_debug(BINDER_DEBUG_BUFFER_ALLOC,
 			     "binder: %d: binder_alloc_buf size %zd"
-			     "failed, no async space left\n", proc->pid, size);
+			     " failed, no async space(%d) left\n", proc->pid, size, proc->free_async_space);
 		return NULL;
 	}
 
@@ -1438,7 +1438,7 @@ static void binder_transaction(struct binder_proc *proc,
 	wait_queue_head_t *target_wait;
 	struct binder_transaction *in_reply_to = NULL;
 	struct binder_transaction_log_entry *e;
-	uint32_t return_error;
+	uint32_t return_error, fail_pos = 0;
 
 	e = binder_transaction_log_add(&binder_transaction_log);
 	e->call_type = reply ? 2 : !!(tr->flags & TF_ONE_WAY);
@@ -1455,6 +1455,7 @@ static void binder_transaction(struct binder_proc *proc,
 					  "with no transaction stack\n",
 					  proc->pid, thread->pid);
 			return_error = BR_FAILED_REPLY;
+			fail_pos = 1;
 			goto err_empty_call_stack;
 		}
 		binder_set_nice(in_reply_to->saved_priority);
@@ -1469,12 +1470,14 @@ static void binder_transaction(struct binder_proc *proc,
 				in_reply_to->to_thread->pid : 0);
 			return_error = BR_FAILED_REPLY;
 			in_reply_to = NULL;
+			fail_pos = 2;
 			goto err_bad_call_stack;
 		}
 		thread->transaction_stack = in_reply_to->to_parent;
 		target_thread = in_reply_to->from;
 		if (target_thread == NULL) {
 			return_error = BR_DEAD_REPLY;
+			fail_pos = 3;
 			goto err_dead_binder;
 		}
 		if (target_thread->transaction_stack != in_reply_to) {
@@ -1488,6 +1491,7 @@ static void binder_transaction(struct binder_proc *proc,
 			return_error = BR_FAILED_REPLY;
 			in_reply_to = NULL;
 			target_thread = NULL;
+			fail_pos = 4;
 			goto err_dead_binder;
 		}
 		target_proc = target_thread->proc;
@@ -1500,6 +1504,7 @@ static void binder_transaction(struct binder_proc *proc,
 					"transaction to invalid handle\n",
 					proc->pid, thread->pid);
 				return_error = BR_FAILED_REPLY;
+				fail_pos = 5;
 				goto err_invalid_target_handle;
 			}
 			target_node = ref->node;
@@ -1507,6 +1512,7 @@ static void binder_transaction(struct binder_proc *proc,
 			target_node = binder_context_mgr_node;
 			if (target_node == NULL) {
 				return_error = BR_DEAD_REPLY;
+				fail_pos = 6;
 				goto err_no_context_mgr_node;
 			}
 		}
@@ -1514,6 +1520,7 @@ static void binder_transaction(struct binder_proc *proc,
 		target_proc = target_node->proc;
 		if (target_proc == NULL) {
 			return_error = BR_DEAD_REPLY;
+			fail_pos = 7;
 			goto err_dead_binder;
 		}
 		if (!(tr->flags & TF_ONE_WAY) && thread->transaction_stack) {
@@ -1528,6 +1535,7 @@ static void binder_transaction(struct binder_proc *proc,
 					tmp->to_thread ?
 					tmp->to_thread->pid : 0);
 				return_error = BR_FAILED_REPLY;
+				fail_pos = 8;
 				goto err_bad_call_stack;
 			}
 			while (tmp) {
@@ -1551,6 +1559,7 @@ static void binder_transaction(struct binder_proc *proc,
 	t = kzalloc(sizeof(*t), GFP_KERNEL);
 	if (t == NULL) {
 		return_error = BR_FAILED_REPLY;
+		fail_pos = 9;
 		goto err_alloc_t_failed;
 	}
 	binder_stats_created(BINDER_STAT_TRANSACTION);
@@ -1558,6 +1567,7 @@ static void binder_transaction(struct binder_proc *proc,
 	tcomplete = kzalloc(sizeof(*tcomplete), GFP_KERNEL);
 	if (tcomplete == NULL) {
 		return_error = BR_FAILED_REPLY;
+		fail_pos = 10;
 		goto err_alloc_tcomplete_failed;
 	}
 	binder_stats_created(BINDER_STAT_TRANSACTION_COMPLETE);
@@ -1596,6 +1606,7 @@ static void binder_transaction(struct binder_proc *proc,
 		tr->offsets_size, !reply && (t->flags & TF_ONE_WAY));
 	if (t->buffer == NULL) {
 		return_error = BR_FAILED_REPLY;
+		fail_pos = 11;
 		goto err_binder_alloc_buf_failed;
 	}
 	t->buffer->allow_user_free = 0;
@@ -1611,12 +1622,14 @@ static void binder_transaction(struct binder_proc *proc,
 		binder_user_error("binder: %d:%d got transaction with invalid "
 			"data ptr\n", proc->pid, thread->pid);
 		return_error = BR_FAILED_REPLY;
+		fail_pos = 12;
 		goto err_copy_data_failed;
 	}
 	if (copy_from_user(offp, tr->data.ptr.offsets, tr->offsets_size)) {
 		binder_user_error("binder: %d:%d got transaction with invalid "
 			"offsets ptr\n", proc->pid, thread->pid);
 		return_error = BR_FAILED_REPLY;
+		fail_pos = 13;
 		goto err_copy_data_failed;
 	}
 	if (!IS_ALIGNED(tr->offsets_size, sizeof(size_t))) {
@@ -1624,6 +1637,7 @@ static void binder_transaction(struct binder_proc *proc,
 			"invalid offsets size, %zd\n",
 			proc->pid, thread->pid, tr->offsets_size);
 		return_error = BR_FAILED_REPLY;
+		fail_pos = 14;
 		goto err_bad_offset;
 	}
 	off_end = (void *)offp + tr->offsets_size;
@@ -1636,6 +1650,7 @@ static void binder_transaction(struct binder_proc *proc,
 				"invalid offset, %zd\n",
 				proc->pid, thread->pid, *offp);
 			return_error = BR_FAILED_REPLY;
+			fail_pos = 15;
 			goto err_bad_offset;
 		}
 		fp = (struct flat_binder_object *)(t->buffer->data + *offp);
@@ -1648,6 +1663,7 @@ static void binder_transaction(struct binder_proc *proc,
 				node = binder_new_node(proc, fp->binder, fp->cookie);
 				if (node == NULL) {
 					return_error = BR_FAILED_REPLY;
+					fail_pos = 16;
 					goto err_binder_new_node_failed;
 				}
 				node->min_priority = fp->flags & FLAT_BINDER_FLAG_PRIORITY_MASK;
@@ -1660,11 +1676,13 @@ static void binder_transaction(struct binder_proc *proc,
 					fp->binder, node->debug_id,
 					fp->cookie, node->cookie);
 				return_error = BR_FAILED_REPLY;
+				fail_pos = 17;
 				goto err_binder_get_ref_for_node_failed;
 			}
 			ref = binder_get_ref_for_node(target_proc, node);
 			if (ref == NULL) {
 				return_error = BR_FAILED_REPLY;
+				fail_pos = 18;
 				goto err_binder_get_ref_for_node_failed;
 			}
 			if (fp->type == BINDER_TYPE_BINDER)
@@ -1689,6 +1707,7 @@ static void binder_transaction(struct binder_proc *proc,
 					"handle, %ld\n", proc->pid,
 					thread->pid, fp->handle);
 				return_error = BR_FAILED_REPLY;
+				fail_pos = 19;
 				goto err_binder_get_ref_failed;
 			}
 			if (ref->node->proc == target_proc) {
@@ -1708,6 +1727,7 @@ static void binder_transaction(struct binder_proc *proc,
 				new_ref = binder_get_ref_for_node(target_proc, ref->node);
 				if (new_ref == NULL) {
 					return_error = BR_FAILED_REPLY;
+					fail_pos = 20;
 					goto err_binder_get_ref_for_node_failed;
 				}
 				fp->handle = new_ref->desc;
@@ -1728,12 +1748,14 @@ static void binder_transaction(struct binder_proc *proc,
 					binder_user_error("binder: %d:%d got reply with fd, %ld, but target does not allow fds\n",
 						proc->pid, thread->pid, fp->handle);
 					return_error = BR_FAILED_REPLY;
+					fail_pos = 21;
 					goto err_fd_not_allowed;
 				}
 			} else if (!target_node->accept_fds) {
 				binder_user_error("binder: %d:%d got transaction with fd, %ld, but target does not allow fds\n",
 					proc->pid, thread->pid, fp->handle);
 				return_error = BR_FAILED_REPLY;
+				fail_pos = 22;
 				goto err_fd_not_allowed;
 			}
 
@@ -1742,12 +1764,14 @@ static void binder_transaction(struct binder_proc *proc,
 				binder_user_error("binder: %d:%d got transaction with invalid fd, %ld\n",
 					proc->pid, thread->pid, fp->handle);
 				return_error = BR_FAILED_REPLY;
+				fail_pos = 23;
 				goto err_fget_failed;
 			}
 			target_fd = task_get_unused_fd_flags(target_proc, O_CLOEXEC);
 			if (target_fd < 0) {
 				fput(file);
 				return_error = BR_FAILED_REPLY;
+				fail_pos = 24;
 				goto err_get_unused_fd_failed;
 			}
 			task_fd_install(target_proc, target_fd, file);
@@ -1762,6 +1786,7 @@ static void binder_transaction(struct binder_proc *proc,
 				"n with invalid object type, %lx\n",
 				proc->pid, thread->pid, fp->type);
 			return_error = BR_FAILED_REPLY;
+			fail_pos = 25;
 			goto err_bad_object_type;
 		}
 	}
@@ -1815,8 +1840,8 @@ err_dead_binder:
 err_invalid_target_handle:
 err_no_context_mgr_node:
 	binder_debug(BINDER_DEBUG_FAILED_TRANSACTION,
-		     "binder: %d:%d transaction failed %d, size %zd-%zd\n",
-		     proc->pid, thread->pid, return_error,
+		     "binder: %d:%d transaction failed %d(%d), size %zd-%zd\n",
+		     proc->pid, thread->pid, return_error, fail_pos,
 		     tr->data_size, tr->offsets_size);
 
 	{

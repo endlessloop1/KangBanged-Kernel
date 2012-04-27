@@ -39,8 +39,6 @@ struct cy8c_ts_data {
 	uint16_t intr;
 	int (*power) (int on);
 	int (*wake)(void);
-	uint8_t unlock_attr;
-	uint8_t unlock_page;
 	struct early_suspend early_suspend;
 	uint8_t debug_log_level;
 	uint8_t orient;
@@ -58,7 +56,6 @@ struct cy8c_ts_data {
 	uint16_t *filter_level;
 	uint8_t grip_suppression;
 	uint8_t ambiguous_state;
-	uint8_t suspend;
 };
 
 static struct cy8c_ts_data *private_ts;
@@ -69,9 +66,6 @@ static void cy8c_ts_late_resume(struct early_suspend *h);
 #endif
 
 static int cy8c_init_panel(struct cy8c_ts_data *ts);
-static int cy8c_reset_baseline(void);
-
-static DEFINE_MUTEX(cy8c_mutex);
 
 int i2c_cy8c_read(struct i2c_client *client, uint8_t addr, uint8_t *data, uint8_t length)
 {
@@ -154,13 +148,9 @@ int i2c_cy8c_write_byte_data(struct i2c_client *client, uint8_t addr, uint8_t va
 
 static int cy8c_data_toggle(struct cy8c_ts_data *ts)
 {
-	uint8_t buf = 0;
-	int ret = 0;
-	ret = i2c_cy8c_read(ts->client, 0x00, &buf, 1);
-	if(!ret)
-		return i2c_cy8c_write_byte_data(ts->client, 0x00, buf ^= BIT(7));
-
-	return -1;
+	uint8_t buf;
+	i2c_cy8c_read(ts->client, 0x00, &buf, 1);
+	return i2c_cy8c_write_byte_data(ts->client, 0x00, buf ^= BIT(7));
 }
 
 static ssize_t cy8c_vendor_show(struct device *dev,
@@ -171,7 +161,7 @@ static ssize_t cy8c_vendor_show(struct device *dev,
 	ts_data = private_ts;
 	sprintf(buf, "%s_x%4.4X_%2.2X\n", CYPRESS_TMA_NAME,
 		ts_data->version, ts_data->id);
-	ret = strlen(buf);
+	ret = strlen(buf) + 1;
 	return ret;
 }
 
@@ -412,7 +402,7 @@ static ssize_t cy8c_cal_store(struct device *dev,
 {
 	struct cy8c_ts_data *ts_data;
 	uint8_t cal_command[3] = {0x20, 0x00, 0x00};
-	uint8_t data[3] = {0};
+	uint8_t data[3];
 	uint8_t loop_i;
 	ts_data = private_ts;
 
@@ -427,45 +417,41 @@ static ssize_t cy8c_cal_store(struct device *dev,
 
 		disable_irq(ts_data->client->irq);
 
-		if(!i2c_cy8c_read(ts_data->client, 0x00, data, 3)) {
-			if ((data[2] & 0x0F) >= 1) {
-				printk(KERN_INFO "[cal_store]Number of touches %d\n", data[2] & 0x0F);
-				enable_irq(ts_data->client->irq);
-				return count;
-			}
+		i2c_cy8c_read(ts_data->client, 0x00, data, 3);
+		if ((data[2] & 0x0F) >= 1) {
+			printk(KERN_INFO "[cal_store]Number of touches %d\n", data[2] & 0x0F);
+			enable_irq(ts_data->client->irq);
+			return count;
 		}
 
 		/* Enter System mode */
-		if(!i2c_cy8c_read(ts_data->client, 0x00, &data[0], 1)) {
-			i2c_cy8c_write_byte_data(ts_data->client, 0x00,
-				(data[0] & 0x8F) | (1 << 4));
-			mdelay(64);
+		i2c_cy8c_read(ts_data->client, 0x00, &data[0], 1);
+		i2c_cy8c_write_byte_data(ts_data->client, 0x00,
+			(data[0] & 0x8F) | (1 << 4));
+		mdelay(64);
 
-			i2c_cy8c_write(ts_data->client, 0x02, &cal_command[0], 3);
-			cy8c_data_toggle(ts_data);
-			mdelay(500);
-			for (loop_i = 0; loop_i < 100; loop_i++) {
-				i2c_cy8c_read(ts_data->client, 0x00, data, 3);
-				if (data[1] == 0x86) {
-					printk(KERN_INFO "[cal_store][%d]status return 0x%X\n",
-						loop_i + 1, data[1]);
-					break;
-				} else
-					mdelay(10);
-			}
+		i2c_cy8c_write(ts_data->client, 0x02, &cal_command[0], 3);
+		cy8c_data_toggle(ts_data);
+		mdelay(500);
+		for (loop_i = 0; loop_i < 100; loop_i++) {
+			i2c_cy8c_read(ts_data->client, 0x00, data, 3);
+			if (data[1] == 0x86) {
+				printk(KERN_INFO "[cal_store][%d]status return 0x%X\n",
+					loop_i + 1, data[1]);
+				break;
+			} else
+				mdelay(10);
 		}
 		/* Enter operation mode */
-		if(!i2c_cy8c_read(ts_data->client, 0x00, data, 1)) {
-			if ((data[0] & 0x70) == 0x10) {
-				i2c_cy8c_write_byte_data(ts_data->client, 0x00,
-					((data[0] ^= BIT(7)) & 0x8F));
-			}
-			mdelay(64);
+		i2c_cy8c_read(ts_data->client, 0x00, data, 1);
+		if ((data[0] & 0x70) == 0x10) {
+			i2c_cy8c_write_byte_data(ts_data->client, 0x00,
+				((data[0] ^= BIT(7)) & 0x8F));
 		}
+		mdelay(64);
 
-		if(!i2c_cy8c_read(ts_data->client, 0x00, &data[0], 2)) {
-			printk(KERN_INFO "[cal_store]change mode to 0x%X 0x%X\n", data[0], data[1]);
-		}
+		i2c_cy8c_read(ts_data->client, 0x00, &data[0], 2);
+		printk(KERN_INFO "[cal_store]change mode to 0x%X 0x%X\n", data[0], data[1]);
 		enable_irq(ts_data->client->irq);
 	}
 	return count;
@@ -473,37 +459,6 @@ static ssize_t cy8c_cal_store(struct device *dev,
 
 static DEVICE_ATTR(calibration, (S_IWUSR|S_IRUGO),
 	cy8c_cal_show, cy8c_cal_store);
-
-static ssize_t cy8c_unlock_store(struct device *dev,
-		struct device_attribute *attr, const char *buf, size_t count)
-{
-	struct cy8c_ts_data *ts_data;
-	int unlock = -1;
-	ts_data = private_ts;
-
-	if (!sscanf(buf, "%d", &unlock)) {
-		printk(KERN_INFO "cy8c_unlock_store sscanf return failed\n");
-		return count;
-	}
-
-	printk(KERN_INFO "Touch: unlock change to (%d %d %d)\n", unlock, ts_data->finger_count, ts_data->unlock_attr);
-	if (unlock == 1 && ts_data->unlock_attr)
-		ts_data->unlock_page = 1;
-
-	mutex_lock(&cy8c_mutex);
-
-	if (unlock == 2 && (!ts_data->finger_count)
-		&& ts_data->unlock_attr && ts_data->suspend == 0) {
-		ts_data->unlock_page = 0;
-		cy8c_reset_baseline();
-	}
-	mutex_unlock(&cy8c_mutex);
-
-	return count;
-}
-
-static DEVICE_ATTR(unlock, (S_IWUSR|S_IRUGO),
-	NULL, cy8c_unlock_store);
 
 
 static struct kobject *android_touch_kobj;
@@ -543,11 +498,6 @@ static int cy8c_touch_sysfs_init(void)
 		printk(KERN_ERR "%s: sysfs_create_file failed\n", __func__);
 		return ret;
 	}
-	ret = sysfs_create_file(android_touch_kobj, &dev_attr_unlock.attr);
-	if (ret) {
-		printk(KERN_ERR "%s: sysfs_create_file failed\n", __func__);
-		return ret;
-	}
 	return 0;
 }
 
@@ -562,7 +512,7 @@ static void cy8c_touch_sysfs_deinit(void)
 
 static int cy8c_init_panel(struct cy8c_ts_data *ts)
 {
-	uint8_t buf = 0, loop_i;
+	uint8_t buf, loop_i;
 	uint8_t sec_key[] = {0x00, 0xFF, 0xA5, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
 	if (i2c_cy8c_write(ts->client, 0x00, sec_key, 11) < 0) {
 		printk(KERN_ERR "TOUCH_ERR: init failed to system info mode\n");
@@ -584,36 +534,12 @@ static int cy8c_init_panel(struct cy8c_ts_data *ts)
 	if (ts->interval)
 		i2c_cy8c_write_byte_data(ts->client, 0x1F, ts->interval);
 
-	if(!i2c_cy8c_read(ts->client, 0x00, &buf, 1)) {
-		if ((buf & 0x70) == 0x10)
-			i2c_cy8c_write_byte_data(ts->client, 0x00, ((buf ^= BIT(7)) & 0x8F));
-		msleep(40);
-	}
+	i2c_cy8c_read(ts->client, 0x00, &buf, 1);
+	if ((buf & 0x70) == 0x10)
+		i2c_cy8c_write_byte_data(ts->client, 0x00, ((buf ^= BIT(7)) & 0x8F));
+	msleep(40);
 
 	return 0;
-}
-
-static int cy8c_reset_baseline(void)
-{
-	struct cy8c_ts_data *ts_data;
-	uint8_t data[3] = {0};
-	ts_data = private_ts;
-
-	i2c_cy8c_read(ts_data->client, 0x00, data, 2);
-	if ((data[1] & 0x10) == 0x10) {
-		printk(KERN_INFO "Bootloader mode to OP mode3\n");
-		cy8c_init_panel(ts_data);
-	}
-	i2c_cy8c_read(ts_data->client, 0x1B, &data[0], 1);
-	if ((data[0] & 0x01) == 0) {
-		i2c_cy8c_write_byte_data(ts_data->client, 0x1B,
-		(data[0] | 0x01));
-		printk(KERN_INFO "[TOUCH] cy8c reset baseline\n");
-		return 0;
-	} else {
-		printk(KERN_INFO "[TOUCH] cy8c reset baseline bypass\n");
-		return 1;
-	}
 }
 
 static void cy8c_orient(uint16_t *x, uint16_t *y, uint8_t orient)
@@ -629,7 +555,7 @@ static void cy8c_orient(uint16_t *x, uint16_t *y, uint8_t orient)
 static void cy8c_ts_work_func(struct work_struct *work)
 {
 	struct cy8c_ts_data *ts = container_of(work, struct cy8c_ts_data, work);
-	uint8_t buf[32] = {0}, loop_i, loop_j;
+	uint8_t buf[32], loop_i, loop_j;
 
 	i2c_cy8c_read(ts->client, 0x00, buf, 32);
 	if (ts->debug_log_level & 0x1) {
@@ -646,10 +572,7 @@ static void cy8c_ts_work_func(struct work_struct *work)
 			printk(KERN_ERR "TOUCH_ERR: %s init failed\n",
 			__func__);
 	}
-
-	if (buf[2] & 0x10)
-		printk(KERN_INFO "[TOUCH] cy8c large object detected\n");
-	if ((buf[2] & 0x0F) >= 1) {
+	if ((buf[2] & 0x0F) >= 1 && !(buf[2] & 0x10)) {
 		int base = 0x03;
 		int report = -1;
 		uint16_t finger_data[4][3];
@@ -660,7 +583,6 @@ static void cy8c_ts_work_func(struct work_struct *work)
 		if (ts->debug_log_level & 0x4)
 			printk(KERN_INFO "Finger ID: %X, count: %d\n",
 				ts->finger_id, ts->finger_count);
-
 		if (ts->p_finger_count && (ts->finger_count != ts->p_finger_count ||
 			ts->finger_id != ts->p_finger_id)) {
 			report = 0;
@@ -808,11 +730,6 @@ static void cy8c_ts_work_func(struct work_struct *work)
 				}
 			}
 		}
-		if ((ts->unlock_page) &&
-			((ts->p_finger_count > ts->finger_count) ||
-			(ts->finger_count == 4))) {
-			cy8c_reset_baseline();
-		}
 	} else {
 		ts->finger_count = 0;
 		ts->p_finger_count = 0;
@@ -869,7 +786,7 @@ static int cy8c_ts_probe(struct i2c_client *client,
 	struct cy8c_ts_data *ts;
 	struct cy8c_i2c_platform_data *pdata;
 	int ret = 0;
-	uint8_t buf[6] = {0};
+	uint8_t buf[6];
 	printk(KERN_DEBUG "%s: enter\n", __func__);
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
@@ -939,7 +856,6 @@ static int cy8c_ts_probe(struct i2c_client *client,
 		ts->orient = pdata->orient;
 		ts->timeout = pdata->timeout;
 		ts->interval = pdata->interval;
-		ts->unlock_attr = pdata->unlock_attr;
 		dev_info(&client->dev, "orient: %d\n", ts->orient);
 		ts->wake = pdata->wake;
 		ts->filter_level = pdata->filter_level;
@@ -970,9 +886,8 @@ static int cy8c_ts_probe(struct i2c_client *client,
 	set_bit(KEY_MENU, ts->input_dev->keybit);
 	set_bit(KEY_SEARCH, ts->input_dev->keybit);
 
-	if(pdata) {
-		printk(KERN_INFO "input_set_abs_params: mix_x %d, max_x %d, min_y %d, max_y %d\n",
-			pdata->abs_x_min, pdata->abs_x_max, pdata->abs_y_min, pdata->abs_y_max);
+	printk(KERN_INFO "input_set_abs_params: mix_x %d, max_x %d, min_y %d, max_y %d\n",
+		pdata->abs_x_min, pdata->abs_x_max, pdata->abs_y_min, pdata->abs_y_max);
 
 	input_set_abs_params(ts->input_dev, ABS_MT_POSITION_X,
 		pdata->abs_x_min, pdata->abs_x_max, 0, 0);
@@ -989,7 +904,6 @@ static int cy8c_ts_probe(struct i2c_client *client,
 		input_set_abs_params(ts->input_dev, ABS_MT_POSITION,
 			0, (BIT(31) | (pdata->abs_x_max << 16) | pdata->abs_y_max), 0, 0);
 #endif
-	}
 
 	ret = input_register_device(ts->input_dev);
 	if (ret) {
@@ -1001,7 +915,7 @@ static int cy8c_ts_probe(struct i2c_client *client,
 
 	if (client->irq) {
 		ret = request_irq(client->irq, cy8c_ts_irq_handler,
-				  IRQF_TRIGGER_LOW | IRQF_TRIGGER_FALLING, client->name, ts);
+				  IRQF_TRIGGER_LOW, client->name, ts);
 		if (ret == 0)
 			ts->use_irq = 1;
 		else
@@ -1067,7 +981,7 @@ static int cy8c_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 {
 	struct cy8c_ts_data *ts = i2c_get_clientdata(client);
 	int ret;
-	uint8_t buf[2] = {0};
+	uint8_t buf[2];
 
 	if (ts->use_irq)
 		disable_irq_nosync(client->irq);
@@ -1084,14 +998,13 @@ static int cy8c_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 		if (!gpio_get_value(ts->intr))
 			cy8c_data_toggle(ts);
 	}
-	if(!i2c_cy8c_read(ts->client, 0x00, buf, 2))
-		printk(KERN_INFO "%s: %x, %x\n", __func__, buf[0], buf[1]);
+	i2c_cy8c_read(ts->client, 0x00, buf, 2);
+	printk(KERN_INFO "%s: %x, %x\n", __func__, buf[0], buf[1]);
 
 	ts->first_pressed = 0;
 	ts->grip_suppression = 0;
 	ts->p_finger_count = 0;
 	ts->finger_count = 0;
-	ts->unlock_page = 0;
 
 	if ((buf[1] & 0x10) == 0x10)
 		if (cy8c_init_panel(ts) < 0)
@@ -1099,10 +1012,7 @@ static int cy8c_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 			__func__);
 	if (buf[0] & 0x70)
 		i2c_cy8c_write_byte_data(ts->client, 0x00, buf[0] & 0x8F);
-	mutex_lock(&cy8c_mutex);
 	i2c_cy8c_write_byte_data(ts->client, 0x00, (buf[0] & 0x8F) | 0x02);
-	ts->suspend = 1;
-	mutex_unlock(&cy8c_mutex);
 
 	return 0;
 }
@@ -1110,14 +1020,13 @@ static int cy8c_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 static int cy8c_ts_resume(struct i2c_client *client)
 {
 	struct cy8c_ts_data *ts = i2c_get_clientdata(client);
-	uint8_t buf[2] = {0};
+	uint8_t buf[2];
 
 	if (ts->wake)
 		ts->wake();
-	ts->suspend = 0;
 
-	if(!i2c_cy8c_read(ts->client, 0x00, buf, 2))
-		printk(KERN_INFO "%s: %x, %x\n", __func__, buf[0], buf[1]);
+	i2c_cy8c_read(ts->client, 0x00, buf, 2);
+	printk(KERN_INFO "%s: %x, %x\n", __func__, buf[0], buf[1]);
 
 	if ((buf[1] & 0x10) == 0x10)
 		if (cy8c_init_panel(ts) < 0)

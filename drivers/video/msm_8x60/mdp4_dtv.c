@@ -38,7 +38,6 @@
 
 #include "msm_fb.h"
 #include "mdp4.h"
-#include <mach/debug_display.h>
 
 static int dtv_probe(struct platform_device *pdev);
 static int dtv_remove(struct platform_device *pdev);
@@ -98,7 +97,7 @@ static int dtv_off(struct platform_device *pdev)
 
 	ret = panel_next_off(pdev);
 
-	PR_DISP_INFO("%s\n", __func__);
+	pr_info("%s\n", __func__);
 
 	clk_disable(tv_enc_clk);
 	clk_disable(tv_dac_clk);
@@ -157,13 +156,13 @@ static int dtv_on(struct platform_device *pdev)
 
 	ret = clk_set_rate(tv_src_clk, mfd->fbi->var.pixclock);
 	if (ret) {
-		PR_DISP_INFO("%s: clk_set_rate(%d) failed\n", __func__,
+		pr_info("%s: clk_set_rate(%d) failed\n", __func__,
 			mfd->fbi->var.pixclock);
 		if (mfd->fbi->var.pixclock == 27030000)
 			mfd->fbi->var.pixclock = 27000000;
 		ret = clk_set_rate(tv_src_clk, mfd->fbi->var.pixclock);
 	}
-	PR_DISP_INFO("%s: tv_src_clk=%dkHz, pm_qos_rate=%ldkHz, [%d]\n", __func__,
+	pr_info("%s: tv_src_clk=%dkHz, pm_qos_rate=%ldkHz, [%d]\n", __func__,
 		mfd->fbi->var.pixclock/1000, pm_qos_rate, ret);
 
 	clk_enable(tv_enc_clk);
@@ -268,7 +267,7 @@ static int dtv_probe(struct platform_device *pdev)
 	ebi1_clk = clk_get(NULL, "ebi1_dtv_clk");
 	if (IS_ERR(ebi1_clk)) {
 		ebi1_clk = NULL;
-		PR_DISP_WARN("%s: Couldn't get ebi1 clock\n", __func__);
+		pr_warning("%s: Couldn't get ebi1 clock\n", __func__);
 	}
 #endif
 	/*
@@ -335,7 +334,7 @@ static int __init dtv_driver_init(void)
 	tv_src_clk = clk_get(NULL, "tv_src_clk");
 	if (IS_ERR(tv_src_clk)) {
 		tv_src_clk = tv_enc_clk; /* Fallback to slave */
-		PR_DISP_INFO("%s: tv_src_clk not available, using tv_enc_clk"
+		pr_info("%s: tv_src_clk not available, using tv_enc_clk"
 			" instead\n", __func__);
 	}
 

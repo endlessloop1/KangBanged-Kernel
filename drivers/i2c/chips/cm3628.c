@@ -602,7 +602,7 @@ static void sensor_irq_do_work(struct work_struct *work)
 		if (lpi->als_enable == 1)
 			report_lsensor_input_event(lpi, 0);
 		msleep(100);
-		pr_err("[PS][CM3628 error]sensor reset");
+		pr_err("[PS][CM3628 error]sensor reset failed");
 	}
 
 	enable_irq(lpi->irq);

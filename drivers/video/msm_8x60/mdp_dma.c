@@ -51,6 +51,9 @@ int mdp_vsync_usec_wait_line_too_short = 5;
 uint32 mdp_dma2_update_time_in_usec;
 uint32 mdp_total_vdopkts;
 
+extern u32 msm_fb_debug_enabled;
+extern struct workqueue_struct *mdp_dma_wq;
+
 int vsync_start_y_adjust = 4;
 
 static void mdp_dma2_update_lcd(struct msm_fb_data_type *mfd)
@@ -253,7 +256,9 @@ enum hrtimer_restart mdp_dma2_vsync_hrtimer_handler(struct hrtimer *ht)
 
 		t = ktime_get_real();
 
-		actual_wait = ktime_to_us(ktime_sub(t, vt));
+		actual_wait =
+		    (t.tv.sec - vt.tv.sec) * 1000000 + (t.tv.nsec -
+							vt.tv.nsec) / 1000;
 		usec_diff = actual_wait - mdp_expected_usec_wait;
 
 		if ((mdp_usec_diff_threshold < usec_diff) || (usec_diff < 0))
@@ -286,7 +291,7 @@ static void mdp_dma_schedule(struct msm_fb_data_type *mfd, uint32 term)
 		mdp_pipe_ctrl(MDP_DMA2_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 
 	mdp_dma2_update_time_in_usec =
-	    ktime_to_us(mdp_dma2_last_update_time);
+	    MDP_KTIME2USEC(mdp_dma2_last_update_time);
 
 	if ((!mfd->ibuf.vsync_enable) || (!mfd->panel_info.lcd.vsync_enable)
 	    || (mfd->use_mdp_vsync)) {
@@ -373,7 +378,8 @@ static void mdp_dma_schedule(struct msm_fb_data_type *mfd, uint32 term)
 	} else {
 		ktime_t wait_time;
 
-		wait_time = ns_to_ktime(usec_wait_time * 1000);
+		wait_time.tv.sec = 0;
+		wait_time.tv.nsec = usec_wait_time * 1000;
 
 		if (msm_fb_debug_enabled) {
 			vt = ktime_get_real();
@@ -507,9 +513,9 @@ void mdp_dma_pan_update(struct fb_info *info)
 	if (mfd->sw_currently_refreshing) {
 		/* we need to wait for the pending update */
 		mfd->pan_waiting = TRUE;
-		if (!mfd->ibuf_flushed)
+		if (!mfd->ibuf_flushed) {
 			wait_for_completion_killable(&mfd->pan_comp);
-
+		}
 		/* waiting for this update to complete */
 		mfd->pan_waiting = TRUE;
 		wait_for_completion_killable(&mfd->pan_comp);

@@ -28,7 +28,7 @@
 #else
 #define SD_ID 8
 #endif
-#define DMA_CLK_TIMER 100 /* 100 ms */
+#define DMA_CLK_TIMER 50 /* 50 ms*/
 #define MODULE_NAME "msm_dmov"
 
 #define MSM_DMOV_CHANNEL_COUNT 16

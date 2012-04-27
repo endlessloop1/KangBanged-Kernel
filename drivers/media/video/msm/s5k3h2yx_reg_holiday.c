@@ -175,6 +175,17 @@ struct s5k3h2yx_i2c_reg_conf s5k3h2yx_common_settings_array_mipi[] =
 
 struct s5k3h2yx_i2c_reg_conf s5k3h2yx_qtr_settings_array_mipi[] =
 {
+  { 0x0305 , 0x04 }, /* pre_pll_clk_div = 4 */
+  { 0x0306 , 0x00 }, /* pll_multiplier */
+  { 0x0307 , 0x98 }, /* pll_multiplier = 152 */ /* For 912Mbps */
+  { 0x0303 , 0x01 }, /* vt_sys_clk_div = 1 */
+  { 0x0301 , 0x05 }, /* vt_pix_clk_div = 5 */
+  { 0x030B , 0x01 }, /* op_sys_clk_div = 1 */
+  { 0x0309 , 0x05 }, /* op_pix_clk_div = 5 */
+  { 0x30CC , 0xE0 }, /* DPHY_band_ctrl 870 ~ 950Mbps */ /* For 912Mbps */
+  { 0x31A1 , 0x5A }, /* "DBR_CLK = PLL_CLK / DIV_DBR(s31A1[3:0]) = 912Mhz / 10 = 91.2Mhz[7:4] must be same as vt_pix_clk_div (s0301)" */
+
+
   { 0x0344 , 0x00 }, /* X addr start 0d */
   { 0x0345 , 0x00 },
   { 0x0346 , 0x00 }, /* Y addr start 0d */
@@ -203,14 +214,14 @@ struct s5k3h2yx_i2c_reg_conf s5k3h2yx_qtr_settings_array_mipi[] =
 
   { 0x0200 , 0x02 }, /* fine integration time */
   { 0x0201 , 0x50 },
-  { 0x0202 , 0x04 }, /* Coarse integration time */
-  { 0x0203 , 0xDB },
+  { 0x0202 , 0x06 }, /* Coarse integration time */
+  { 0x0203 , 0xC6 },
   { 0x0204 , 0x00 }, /* Analog gain */
   { 0x0205 , 0x20 },
   { 0x0342 , 0x0D }, /* Line_length_pck 3470d */
   { 0x0343 , 0x8E },
-  { 0x0340 , 0x04 }, /* Frame_length_lines 1248d */
-  { 0x0341 , 0xE0 },
+  { 0x0340 , 0x06 }, /* Frame_length_lines 1248d */
+  { 0x0341 , 0xD6 },
   /*{ 0x300E , 0xED },*/ /* Reserved */ /* For 648Mbps */
   /*{ 0x301D , 0x80 },*/ /* Reserved */ /* For 648Mbps */
   /*{ 0x301A , 0x77 },*/ /* Reserved */ /* For 648Mbps */

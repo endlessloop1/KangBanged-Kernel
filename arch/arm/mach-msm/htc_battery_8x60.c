@@ -430,7 +430,11 @@ static int htc_batt_get_battery_info(struct battery_info_reply *htc_batt_update)
 	htc_batt_update->batt_vol = htc_batt_info.rep.batt_vol;
 	htc_batt_update->batt_id = htc_batt_info.rep.batt_id;
 	htc_batt_update->batt_temp = htc_batt_info.rep.batt_temp;
-	htc_batt_update->batt_current = htc_batt_info.rep.batt_current;
+
+	/* report the net current injection into battery no
+	 * matter charging is enable or not (may negative) */
+	htc_batt_update->batt_current = htc_batt_info.rep.batt_current -
+			htc_batt_info.rep.batt_discharg_current;
 	htc_batt_update->batt_discharg_current =
 				htc_batt_info.rep.batt_discharg_current;
 	htc_batt_update->level = htc_batt_info.rep.level;

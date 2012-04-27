@@ -142,70 +142,6 @@ static void sdio_tty_work_func_dun(struct work_struct *work)
 	tty_wakeup(tty);
 }
 
-#ifdef CONFIG_BUILD_CIQ
-static void sdio_tty_work_func_ciq(struct work_struct *work)
-{
-	unsigned char *ptr;
-	int avail;
-	int ret;
-
-	struct sdio_tty_info *info = container_of(work,
-						struct sdio_tty_info,
-						tty_work);
-	struct tty_struct *tty = info->tty;
-
-	if (!tty) {
-		pr_info("[sdio_tty]sdio_tty_work_func_ciq: tty=NULL\n");
-		return;
-	}
-
-	mutex_lock(&sdio_tty_lock);
-
-	for (;;) {
-		if (test_bit(TTY_THROTTLED, &tty->flags))
-			break;
-		if (info->ch == 0) {
-			pr_info("[sdio_tty]sdio_tty_work_func_ciq: info->ch == 0 \n");
-			printk(KERN_ERR "[sdio_tty]sdio_tty_work_func_ciq: info->ch null\n");
-			break;
-		}
-
-		if (info->sdio_open == 0) {
-			pr_info("[sdio_tty]sdio_tty_work_func_ciq: info->sdio_open == 0 \n");
-			return;
-		}
-
-		avail = sdio_read_avail(info->ch);
-		if (avail == 0) {
-			break;
-		}
-
-		ptr = NULL;
-		avail = tty_prepare_flip_string(tty, &ptr, avail);
-		if (avail && ptr) {
-			ret = sdio_read(info->ch, ptr, avail);
-			if (ret) {
-				pr_info("[sdio_tty]sdio_tty_work_func_ciq: read 0 bytes from sdio_driver \n");
-				break;
-			}
-			/*++SSD_RIL:Mars@20110830: remove un-useful garbage characters in log file.*/
-			/*else
-				pr_info("[sdio_tty]sdio_tty_work_func_ciq: read bytes data %s \n", ptr);*/
-			/*--SSD_RIL*/
-			wake_lock_timeout(&info->wake_lock, HZ / 2);
-			tty->low_latency = 1;
-			tty_flip_buffer_push(tty);
-		} else
-			printk(KERN_ERR "[sdio_tty]sdio_tty_work_func_ciq: tty_prepare_flip_string fail\n");
-	}
-
-	mutex_unlock(&sdio_tty_lock);
-
-	/* XXX only when writable and necessary */
-	tty_wakeup(tty);
-}
-#endif
-
 static void sdio_tty_notify(void *priv, unsigned event)
 {
 	struct sdio_tty_info *info = priv;
@@ -498,11 +434,6 @@ static int __init sdio_tty_init(void)
 	INIT_WORK(&sdio_tty[1].tty_work, sdio_tty_work_func);
 */
 //--SSD_RIL
-#ifdef CONFIG_BUILD_CIQ
-	tty_register_device(sdio_tty_driver, 2, 0);
-	INIT_WORK(&sdio_tty[2].tty_work, sdio_tty_work_func_ciq);//SSD_RIL: Mars@20110620: separate DUN and CIQ work function, call sdio_tty_work_func_ciq for CIQ
-#endif
-
 
 	if (!diag_enable_flag) {
 		defaultEnableDUN = true;

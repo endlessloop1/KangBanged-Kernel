@@ -21,7 +21,11 @@
 #include <linux/slab.h>
 #include <linux/io.h>
 #include <mach/irqs.h>
+#ifdef CONFIG_CAMERA_ZSL
+#include <mach/camera-8x60_ZSL.h>
+#else
 #include <mach/camera-8x60.h>
+#endif
 #include <mach/msm_reqs.h>
 #include <asm/atomic.h>
 
@@ -424,6 +428,7 @@ static void vfe31_proc_ops(enum VFE31_MESSAGE_ID id, void *msg, size_t len)
 		break;
 
 	case MSG_ID_STATS_AF:
+		pr_info("[CAM] vfe31_proc_ops MSG_ID_STATS_AF");
 		rp->type = VFE_MSG_STATS_AF;
 		vfe_addr_convert(&(rp->phy), VFE_MSG_STATS_AF,
 				rp->evt_msg.data, NULL, NULL);
@@ -1829,12 +1834,14 @@ static int vfe31_proc_general(struct msm_vfe31_cmd *cmd)
 	case V31_STATS_AF_START: {
 		cmdp = kmalloc(cmd->length, GFP_ATOMIC);
 		if (!cmdp) {
+			pr_info("[CAM] vfe31_proc_general: V31_STATS_AF_START kmalloc fail\n");
 			rc = -ENOMEM;
 			goto proc_general_done;
 		}
 		if (copy_from_user(cmdp,
 			(void __user *)(cmd->value),
 			cmd->length)) {
+			pr_info("[CAM] vfe31_proc_general: V31_STATS_AF_START copy_from_user fail\n");
 			rc = -EFAULT;
 			goto proc_general_done;
 		}
@@ -1842,6 +1849,7 @@ static int vfe31_proc_general(struct msm_vfe31_cmd *cmd)
 		old_val |= AF_ENABLE_MASK;
 		msm_io_w(old_val,
 			vfe31_ctrl->vfebase + VFE_MODULE_CFG);
+		pr_info("[CAM] vfe31_proc_general: V31_STATS_AF_START msm_io_w done\n");
 		msm_io_memcpy(vfe31_ctrl->vfebase + vfe31_cmd[cmd->id].offset,
 		cmdp, (vfe31_cmd[cmd->id].length));
 		}
@@ -3717,6 +3725,7 @@ static void vfe31_process_stats_af_irq(void){
 		vfe_send_stats_msg(vfe31_ctrl->afStatsControl.bufToRender,
 						statsAfNum);
 	} else{
+		pr_info("[CAM] vfe31_process_stats_af_irq failed");
 		spin_unlock_irqrestore(&vfe31_ctrl->af_ack_lock, flags);
 		vfe31_ctrl->afStatsControl.droppedStatsFrameCount++;
 	}

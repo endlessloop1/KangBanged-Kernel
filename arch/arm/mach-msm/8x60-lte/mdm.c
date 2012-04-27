@@ -394,10 +394,9 @@ static int mdm9k_serial_restart = 0;
 static struct msm_rpc_client *rpc_client = NULL;
 #define OEM_RAPI_CLIENT_EVENT_SSD_MDM_SERIAL_NUM 2003
 
-#if defined(CONFIG_MACH_VERDI_LTE) || defined(CONFIG_MACH_HOLIDAY) || defined(CONFIG_MACH_RUBY)
+#if defined(CONFIG_MACH_VERDI_LTE) || defined(CONFIG_MACH_RUBY) || defined(CONFIG_MACH_HOLIDAY)
 #define OEM_RAPI_CLIENT_EVENT_SSD_DISABLE_WATCHDOG_SMPLD 2004
 #endif
-
 
 int mdm_check_bootmode_init(char *s)
 {
@@ -582,11 +581,9 @@ static int __init charm_modem_probe(struct platform_device *pdev)
 	gpio_request(AP2MDM_ERRFATAL, "AP2MDM_ERRFATAL");
 	gpio_request(AP2MDM_KPDPWR_N, "AP2MDM_KPDPWR_N");
 	gpio_request(AP2MDM_PMIC_RESET_N, "AP2MDM_PMIC_RESET_N");
-	gpio_request(AP2MDM_WAKEUP, "AP2MDM_WAKEUP");
 
 	gpio_direction_output(AP2MDM_STATUS, 1);
 	gpio_direction_output(AP2MDM_ERRFATAL, 0);
-	gpio_direction_output(AP2MDM_WAKEUP, 0);
 
 	power_on_charm = d->charm_modem_on;
 	power_down_charm = d->charm_modem_off;
@@ -596,6 +593,11 @@ static int __init charm_modem_probe(struct platform_device *pdev)
 
 	gpio_request(MDM2AP_ERRFATAL, "MDM2AP_ERRFATAL");
 	gpio_direction_input(MDM2AP_ERRFATAL);
+
+#if defined(CONFIG_MACH_VIGOR) || defined(CONFIG_MACH_HOLIDAY)
+	gpio_request(MDM2AP_WAKEUP, "MDM2AP_WAKEUP");
+	gpio_direction_output(MDM2AP_WAKEUP, 1);
+#endif
 
 	atomic_notifier_chain_register(&panic_notifier_list, &charm_panic_blk);
 	charm_debugfs_init();
@@ -655,7 +657,7 @@ static int __devexit charm_modem_remove(struct platform_device *pdev)
 	return misc_deregister(&charm_modem_misc);
 }
 
-#if defined(CONFIG_MACH_VERDI_LTE) || defined(CONFIG_MACH_HOLIDAY) || defined(CONFIG_MACH_RUBY)
+#if defined(CONFIG_MACH_VERDI_LTE) || defined(CONFIG_MACH_RUBY) || defined(CONFIG_MACH_HOLIDAY)
 static void notify_mdm9k_shutdown(void)
 {
 	struct oem_rapi_client_streaming_func_arg arg;
@@ -689,27 +691,25 @@ static void notify_mdm9k_shutdown(void)
 	}
 }
 #endif
+
 static void charm_modem_shutdown(struct platform_device *pdev)
 {
+#ifndef CONFIG_MACH_RUBY
 	int i;
+#endif
 
 	/* Modified by HTC */
 	disable_irq_nosync(charm_errfatal_irq);
 	disable_irq_nosync(charm_status_irq);
 
-	/* Power down sequence
-	1. AP2MDM_STATUS GPIO is pulled low.
-	   The Interrupt Controller block sets its bit for this interrupt
-	   but doesn’t process it yet since 9k is in sleep.
-	2. AP2MDM_WAKEUP GPIO is pulled high.
-	   This results in the 9k wakeup.
-	3. 9k sees the bit in the Int Controller is set for interrupt
-	   on AP2MDM_STATUS and hence, fires the ISR - hw_reset()
-	4. This will result in a graceful reset of the 9k even under XO shutdown
-	*/
-	gpio_set_value(AP2MDM_WAKEUP, 1);
+#if defined(CONFIG_MACH_VIGOR) || defined(CONFIG_MACH_HOLIDAY)
+	if (system_state == SYSTEM_POWER_OFF)
+		gpio_set_value(MDM2AP_WAKEUP, 0);
+	else
+		gpio_set_value(MDM2AP_WAKEUP, 1);
+#endif
 
-#if defined(CONFIG_MACH_VERDI_LTE) || defined(CONFIG_MACH_HOLIDAY) || defined(CONFIG_MACH_RUBY)
+#if defined(CONFIG_MACH_VERDI_LTE) || defined(CONFIG_MACH_RUBY) || defined(CONFIG_MACH_HOLIDAY)
 	if (system_state == SYSTEM_POWER_OFF) {
 		pr_info("%s: Notify mdm9k shutdown (%d)\n", __func__, system_state);
 		notify_mdm9k_shutdown();
@@ -724,6 +724,8 @@ static void charm_modem_shutdown(struct platform_device *pdev)
 	gpio_set_value(AP2MDM_STATUS, 0);
 	}
 
+/*        per radio comment, mdm may not set MDM2APP_STATUS to 0 always, thus ignore this polling*/
+#ifndef CONFIG_MACH_RUBY
 	if (!charm_MDM_error_flag) {	/* Modified by HTC */
 		for (i = CHARM_MODEM_TIMEOUT; i > 0; i -= CHARM_MODEM_DELTA) {
 			pet_watchdog();
@@ -742,7 +744,7 @@ static void charm_modem_shutdown(struct platform_device *pdev)
 			gpio_direction_output(AP2MDM_PMIC_RESET_N, 0);
 		}
 	}
-	gpio_set_value(AP2MDM_WAKEUP, 0);
+#endif
 }
 
 static struct platform_driver charm_modem_driver = {

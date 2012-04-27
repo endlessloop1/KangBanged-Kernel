@@ -283,12 +283,11 @@ static int hw_bitblt_2(void __iomem *engine, u8 op, u32 width, u32 height,
 		writel(tmp, engine + 0x1C);
 	}
 
-	if (op == VIA_BITBLT_FILL) {
-		writel(fg_color, engine + 0x58);
-	} else if (op == VIA_BITBLT_MONO) {
+	if (op != VIA_BITBLT_COLOR)
 		writel(fg_color, engine + 0x4C);
+
+	if (op == VIA_BITBLT_MONO)
 		writel(bg_color, engine + 0x50);
-	}
 
 	if (op == VIA_BITBLT_FILL)
 		ge_cmd |= fill_rop << 24 | 0x00002000 | 0x00000001;
@@ -315,11 +314,13 @@ static int hw_bitblt_2(void __iomem *engine, u8 op, u32 width, u32 height,
 	return 0;
 }
 
-int viafb_setup_engine(struct fb_info *info)
+int viafb_init_engine(struct fb_info *info)
 {
 	struct viafb_par *viapar = info->par;
 	void __iomem *engine;
-	u32 chip_name = viapar->shared->chip_info.gfx_chip_name;
+	int highest_reg, i;
+	u32 vq_start_addr, vq_end_addr, vq_start_low, vq_end_low, vq_high,
+		vq_len, chip_name = viapar->shared->chip_info.gfx_chip_name;
 
 	engine = viapar->shared->vdev->engine_mmio;
 	if (!engine) {
@@ -327,6 +328,18 @@ int viafb_setup_engine(struct fb_info *info)
 			"hardware acceleration disabled\n");
 		return -ENOMEM;
 	}
+
+	/* Initialize registers to reset the 2D engine */
+	switch (viapar->shared->chip_info.twod_engine) {
+	case VIA_2D_ENG_M1:
+		highest_reg = 0x5c;
+		break;
+	default:
+		highest_reg = 0x40;
+		break;
+	}
+	for (i = 0; i <= highest_reg; i += 4)
+		writel(0x0, engine + i);
 
 	switch (chip_name) {
 	case UNICHROME_CLE266:
@@ -343,7 +356,6 @@ int viafb_setup_engine(struct fb_info *info)
 		break;
 	case UNICHROME_VX800:
 	case UNICHROME_VX855:
-	case UNICHROME_VX900:
 		viapar->shared->hw_bitblt = hw_bitblt_2;
 		break;
 	default:
@@ -358,7 +370,7 @@ int viafb_setup_engine(struct fb_info *info)
 	viapar->shared->vq_vram_addr = viapar->fbmem_free;
 	viapar->fbmem_used += VQ_SIZE;
 
-#if defined(CONFIG_VIDEO_VIA_CAMERA) || defined(CONFIG_VIDEO_VIA_CAMERA_MODULE)
+#if defined(CONFIG_FB_VIA_CAMERA) || defined(CONFIG_FB_VIA_CAMERA_MODULE)
 	/*
 	 * Set aside a chunk of framebuffer memory for the camera
 	 * driver.  Someday this driver probably needs a proper allocator
@@ -374,36 +386,12 @@ int viafb_setup_engine(struct fb_info *info)
 	viapar->shared->vdev->camera_fbmem_offset = viapar->fbmem_free;
 #endif
 
-	viafb_reset_engine(viapar);
-	return 0;
-}
-
-void viafb_reset_engine(struct viafb_par *viapar)
-{
-	void __iomem *engine = viapar->shared->vdev->engine_mmio;
-	int highest_reg, i;
-	u32 vq_start_addr, vq_end_addr, vq_start_low, vq_end_low, vq_high,
-		vq_len, chip_name = viapar->shared->chip_info.gfx_chip_name;
-
-	/* Initialize registers to reset the 2D engine */
-	switch (viapar->shared->chip_info.twod_engine) {
-	case VIA_2D_ENG_M1:
-		highest_reg = 0x5c;
-		break;
-	default:
-		highest_reg = 0x40;
-		break;
-	}
-	for (i = 0; i <= highest_reg; i += 4)
-		writel(0x0, engine + i);
-
 	/* Init AGP and VQ regs */
 	switch (chip_name) {
 	case UNICHROME_K8M890:
 	case UNICHROME_P4M900:
 	case UNICHROME_VX800:
 	case UNICHROME_VX855:
-	case UNICHROME_VX900:
 		writel(0x00100000, engine + VIA_REG_CR_TRANSET);
 		writel(0x680A0000, engine + VIA_REG_CR_TRANSPACE);
 		writel(0x02000000, engine + VIA_REG_CR_TRANSPACE);
@@ -440,7 +428,6 @@ void viafb_reset_engine(struct viafb_par *viapar)
 	case UNICHROME_P4M900:
 	case UNICHROME_VX800:
 	case UNICHROME_VX855:
-	case UNICHROME_VX900:
 		vq_start_low |= 0x20000000;
 		vq_end_low |= 0x20000000;
 		vq_high |= 0x20000000;
@@ -486,7 +473,7 @@ void viafb_reset_engine(struct viafb_par *viapar)
 	writel(0x0, engine + VIA_REG_CURSOR_ORG);
 	writel(0x0, engine + VIA_REG_CURSOR_BG);
 	writel(0x0, engine + VIA_REG_CURSOR_FG);
-	return;
+	return 0;
 }
 
 void viafb_show_hw_cursor(struct fb_info *info, int Status)

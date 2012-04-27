@@ -272,9 +272,7 @@ void arch_reset(char mode, const char *cmd)
 		writel(3, WDT0_EN);
 		dsb();
 		set_WDT_EN_footprint(3);
-
-		/* radio team would like to be notified when MDM_DOG_BITE and MDM_FATAL */
-		if (in_panic || (mode == RESTART_MODE_MDM_DOG_BITE) || (mode == RESTART_MODE_MDM_FATAL)) {
+		if (in_panic) {
 			rmt_storage_set_msm_client_status(0);
 			smsm_change_state(SMSM_APPS_STATE, SMSM_APPS_REBOOT, SMSM_APPS_REBOOT);
 		} else {
@@ -298,9 +296,8 @@ void arch_reset(char mode, const char *cmd)
 			break;
 	}
 
-	/*	for kernel panic & ril fatal & MDM_DOG_BITE & MDM_FATAL,
-		kenrel needs waiting modem flushing caches at most 10 seconds. 	*/
-	if (in_panic || get_restart_reason() == RESTART_REASON_RIL_FATAL || (mode == RESTART_MODE_MDM_DOG_BITE) || (mode == RESTART_MODE_MDM_FATAL)) {
+	/* for kernel panic & ril fatal, kenrel needs waiting modem flushing caches at most 10 seconds. */
+	if (in_panic || get_restart_reason() == RESTART_REASON_RIL_FATAL) {
 		int timeout = 10;
 		printk(KERN_INFO "%s: wait for modem flushing caches.\n", __func__);
 		while (timeout > 0 && !modem_cache_flush_done) {

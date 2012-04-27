@@ -8,9 +8,12 @@ obj-$(CONFIG_MSM_CAMERA_LEGACY) += msm_camera.o
 #msm_v4l2.o
 obj-$(CONFIG_MSM_CAMERA_7X30) += msm_camera-7x30.o msm_vfe31.o msm_io_vfe31.o msm_axi_qos.o msm_vpe1.o
 ifdef CONFIG_CAMERA_ZSL
-obj-$(CONFIG_MSM_CAMERA_8X60) += msm_camera-8x60.o msm_io_8x60.o msm_vfe_8x60_ZSL.o msm_axi_qos.o msm_vpe1_8x60.o
+obj-$(CONFIG_MSM_CAMERA_8X60) += msm_camera-8x60_ZSL.o msm_io_8x60_ZSL.o msm_vfe_8x60_ZSL.o msm_axi_qos.o msm_vpe1_8x60_ZSL.o
 else
 obj-$(CONFIG_MSM_CAMERA_8X60) += msm_camera-8x60.o msm_io_8x60.o msm_vfe_8x60.o msm_axi_qos.o msm_vpe1_8x60.o
+ifdef CONFIG_SP3D
+obj-$(CONFIG_MSM_CAMERA_8X60) += msm_camera.o msm_vfe31.o msm_vpe1.o
+endif
 endif
 obj-$(CONFIG_S5K3E2FX) += s5k3e2fx.o
 ifdef CONFIG_ARCH_MSM8X60
@@ -52,6 +55,7 @@ obj-$(CONFIG_OV8810) += ov8810.o
 obj-$(CONFIG_OV8830) += ov8830.o ov8830_reg.o
 obj-$(CONFIG_IMX105) += imx105.o imx105_reg.o
 obj-$(CONFIG_SP3D) += sp3d.o sp3d_reg_3d.o sp3d_reg_2d.o sp3d_reg_com.o sp3d_reg_cal.o
+obj-$(CONFIG_QS_S5K4E1) += qs_s5k4e1.o qs_s5k4e1_reg.o
 obj-$(CONFIG_MT9D015) += mt9d015.o mt9d015_reg.o
 ifdef CONFIG_MACH_SUPERSONIC
 obj-$(CONFIG_S5K3H1GX) += s5k3h1gx_suc.o s5k3h1gx_reg_suc.o
@@ -88,12 +92,16 @@ endif
 endif
 endif
 ifdef CONFIG_MACH_PYRAMID
-obj-$(CONFIG_MT9V113) += mt9v113.o mt9v113_reg_lens_9251.o
+obj-$(CONFIG_MT9V113) += mt9v113.o mt9v113_reg.o
 else
 ifdef CONFIG_MACH_SAGA
 obj-$(CONFIG_MT9V113) += mt9v113.o mt9v113_reg_lens_9251.o
 else
+ifdef CONFIG_MACH_DOUBLESHOT
+obj-$(CONFIG_MT9V113) += mt9v113.o mt9v113_reg_dot.o
+else
 obj-$(CONFIG_MT9V113) += mt9v113.o mt9v113_reg_lens_9218.o
+endif
 endif
 endif
 obj-$(CONFIG_MSM_GEMINI) += msm_gemini_dev.o msm_gemini_sync.o msm_gemini_core.o msm_gemini_hw.o msm_gemini_platform.o

@@ -22,18 +22,15 @@
 #include "inc/si_datatypes.h"
 
 
-byte ReadByteTPI(byte Offset)
-{
+byte ReadByteTPI (byte Offset) {
 	return I2C_ReadByte(TPI_SLAVE_ADDR, Offset);
-}
+	}
 
-void WriteByteTPI(byte Offset, byte Data)
-{
+void WriteByteTPI (byte Offset, byte Data) {
 	I2C_WriteByte(TPI_SLAVE_ADDR, Offset, Data);
-}
+	}
 
-void ReadModifyWriteTPI(byte Offset, byte Mask, byte Data)
-{
+void ReadModifyWriteTPI(byte Offset, byte Mask, byte Data) {
 
 	byte Temp;
 
@@ -41,50 +38,44 @@ void ReadModifyWriteTPI(byte Offset, byte Mask, byte Data)
 	Temp &= ~Mask;
 	Temp |= (Data & Mask);
 	WriteByteTPI(Offset, Temp);
-}
+	}
 
-byte ReadByteCBUS(byte Offset)
-{
+byte ReadByteCBUS (byte Offset) {
 	return I2C_ReadByte(CBUS_SLAVE_ADDR, Offset);
-}
+	}
 
-void WriteByteCBUS(byte Offset, byte Data)
-{
+void WriteByteCBUS(byte Offset, byte Data) {
 	I2C_WriteByte(CBUS_SLAVE_ADDR, Offset, Data);
-}
+	}
 
-void ReadModifyWriteCBUS(byte Offset, byte Mask, byte Value)
-{
+void ReadModifyWriteCBUS(byte Offset, byte Mask, byte Value) {
 
-	byte Temp;
+    byte Temp;
 
-	Temp = ReadByteCBUS(Offset);
-	Temp &= ~Mask;
+    Temp = ReadByteCBUS(Offset);
+    Temp &= ~Mask;
 	Temp |= (Value & Mask);
-	WriteByteCBUS(Offset, Temp);
-}
+    WriteByteCBUS(Offset, Temp);
+	}
 
-byte ReadIndexedRegister(byte PageNum, byte Offset)
-{
+byte ReadIndexedRegister (byte PageNum, byte Offset) {
 	WriteByteTPI(0xBC, PageNum);
 	WriteByteTPI(0xBD, Offset);
 	return ReadByteTPI(0xBE);
-}
+	}
 
-void WriteIndexedRegister(byte PageNum, byte Offset, byte Data)
-{
+void WriteIndexedRegister (byte PageNum, byte Offset, byte Data) {
 	WriteByteTPI(0xBC, PageNum);
 	WriteByteTPI(0xBD, Offset);
 	WriteByteTPI(0xBE, Data);
-}
+	}
 
-void ReadModifyWriteIndexedRegister(byte PageNum, byte Offset, byte Mask, byte Data)
-{
+void ReadModifyWriteIndexedRegister (byte PageNum, byte Offset, byte Mask, byte Data) {
 
 	byte Temp;
 
-	Temp = ReadIndexedRegister(PageNum, Offset);
+	Temp = ReadIndexedRegister (PageNum, Offset);
 	Temp &= ~Mask;
 	Temp |= (Data & Mask);
 	WriteByteTPI(0xBE, Temp);
-}
+	}

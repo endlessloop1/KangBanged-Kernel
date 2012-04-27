@@ -10,7 +10,7 @@
  * Layout is based on skeletonfb.c by James Simmons and Geert Uytterhoeven.
  *
  * This work was made possible by help and equipment support from E-Ink
- * Corporation. http://www.eink.com/
+ * Corporation. http://support.eink.com/community
  *
  * This driver is written to be used with the Metronome display controller.
  * It is intended to be architecture independent. A board specific driver
@@ -763,7 +763,7 @@ static int __devexit metronomefb_remove(struct platform_device *dev)
 
 static struct platform_driver metronomefb_driver = {
 	.probe	= metronomefb_probe,
-	.remove = __devexit_p(metronomefb_remove),
+	.remove = metronomefb_remove,
 	.driver	= {
 		.owner	= THIS_MODULE,
 		.name	= "metronomefb",

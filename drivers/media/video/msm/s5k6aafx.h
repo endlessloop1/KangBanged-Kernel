@@ -50,13 +50,8 @@
 
 #define S5K6AAFX_QTR_SIZE_WIDTH 0x0280
 #define S5K6AAFX_QTR_SIZE_HEIGHT 0x01E0
-#ifdef CONFIG_MACH_VERDI_LTE    //1280 x 752 for Puccini
-#define S5K6AAFX_720P_SIZE_WIDTH 0x0500     //1280
-#define S5K6AAFX_720P_SIZE_HEIGHT 0x02F0    //752
-#else
-#define S5K6AAFX_720P_SIZE_WIDTH 0x0500     //1280
-#define S5K6AAFX_720P_SIZE_HEIGHT 0x02D0    //720
-#endif
+#define S5K6AAFX_720P_SIZE_WIDTH 0x0500
+#define S5K6AAFX_720P_SIZE_HEIGHT 0x02D0
 #define S5K6AAFX_FULL_SIZE_WIDTH 0x0500
 #define S5K6AAFX_FULL_SIZE_HEIGHT 0x0400
 #define S5K6AAFX_ADJ_FULL_SIZE_WIDTH S5K6AAFX_QTR_SIZE_WIDTH*2
@@ -64,7 +59,7 @@
 
 extern struct s5k6aafx_reg s5k6aafx_regs;
 
-#if defined(CONFIG_MACH_SHOOTER) || defined(CONFIG_MACH_SHOOTER_U) || defined(CONFIG_MACH_RIDER) || defined(CONFIG_MACH_HOLIDAY) || defined(CONFIG_MACH_VERDI_LTE) || defined(CONFIG_MACH_KINGDOM) || defined(CONFIG_MACH_SHOOTER_CT)
+#if defined(CONFIG_MACH_SHOOTER) || defined(CONFIG_MACH_SHOOTER_U) || defined(CONFIG_MACH_RIDER) || defined(CONFIG_MACH_HOLIDAY) || defined(CONFIG_MACH_VERDI_LTE) || defined(CONFIG_MACH_KINGDOM)
 extern struct s5k6aafx_reg s5k6aafx_regs_cob;
 #else
 #define s5k6aafx_regs_cob s5k6aafx_regs

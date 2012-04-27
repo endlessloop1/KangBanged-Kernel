@@ -29,7 +29,11 @@
 #ifndef _msm_vpe1_h_
 #define _msm_vpe1_h_
 
+#ifdef CONFIG_CAMERA_ZSL
+#include <mach/camera-8x60_ZSL.h>
+#else
 #include <mach/camera-8x60.h>
+#endif
 
 /***********  start of register offset *********************/
 #define VPE_INTR_ENABLE_OFFSET                0x0020

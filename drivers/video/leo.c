@@ -529,7 +529,7 @@ static void leo_fixup_var_rgb(struct fb_var_screeninfo *var)
 	var->transp.length = 0;
 }
 
-static void leo_unmap_regs(struct platform_device *op, struct fb_info *info,
+static void leo_unmap_regs(struct of_device *op, struct fb_info *info,
 			   struct leo_par *par)
 {
 	if (par->lc_ss0_usr)
@@ -547,7 +547,8 @@ static void leo_unmap_regs(struct platform_device *op, struct fb_info *info,
 		of_iounmap(&op->resource[0], info->screen_base, 0x800000);
 }
 
-static int __devinit leo_probe(struct platform_device *op)
+static int __devinit leo_probe(struct of_device *op,
+			       const struct of_device_id *match)
 {
 	struct device_node *dp = op->dev.of_node;
 	struct fb_info *info;
@@ -636,7 +637,7 @@ out_err:
 	return err;
 }
 
-static int __devexit leo_remove(struct platform_device *op)
+static int __devexit leo_remove(struct of_device *op)
 {
 	struct fb_info *info = dev_get_drvdata(&op->dev);
 	struct leo_par *par = info->par;
@@ -661,7 +662,7 @@ static const struct of_device_id leo_match[] = {
 };
 MODULE_DEVICE_TABLE(of, leo_match);
 
-static struct platform_driver leo_driver = {
+static struct of_platform_driver leo_driver = {
 	.driver = {
 		.name = "leo",
 		.owner = THIS_MODULE,
@@ -676,12 +677,12 @@ static int __init leo_init(void)
 	if (fb_get_options("leofb", NULL))
 		return -ENODEV;
 
-	return platform_driver_register(&leo_driver);
+	return of_register_driver(&leo_driver, &of_bus_type);
 }
 
 static void __exit leo_exit(void)
 {
-	platform_driver_unregister(&leo_driver);
+	of_unregister_driver(&leo_driver);
 }
 
 module_init(leo_init);

@@ -209,7 +209,11 @@ struct msm_ctrl_cmd {
 	int resp_fd; /* FIXME: to be used by the kernel, pass-through for now */
 };
 
+#ifdef CONFIG_CAMERA_ZSL
 struct msm_vfe_evt_msg {
+#else
+struct msm_cam_evt_msg {
+#endif
 	unsigned short type;	/* 1 == event (RPC), 0 == message (adsp) */
 	unsigned short msg_id;
 	unsigned int len;	/* size in, number of bytes out */
@@ -256,7 +260,11 @@ struct msm_stats_event_ctrl {
 	int timeout_ms;
 	struct msm_ctrl_cmd ctrl_cmd;
 	/* struct  vfe_event_t  stats_event; */
+#ifdef CONFIG_CAMERA_ZSL
 	struct msm_vfe_evt_msg stats_event;
+#else
+	struct msm_cam_evt_msg stats_event;
+#endif
 };
 
 /* 2. config command: config command(from config thread); */
@@ -449,6 +457,10 @@ struct msm_frame {
 	uint32_t error_code;
 	struct fd_roi_info roi_info;
 	uint32_t frame_id;
+
+	/* Must match to user space - msm_camera8x60_3D.h */
+	int stcam_quality_ind;
+	uint32_t stcam_conv_value;
 };
 
 enum msm_st_frame_packing {
@@ -552,6 +564,7 @@ struct msm_camsensor_info {
 	char name[MAX_SENSOR_NAME];
 	uint8_t flash_enabled;
 	int8_t total_steps;
+	uint8_t support_3d;
 };
 
 struct msm_camera_info {

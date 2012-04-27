@@ -102,14 +102,12 @@ static int start_timerirq(struct timerirq_data *data)
 
 	printk(KERN_DEBUG "[GSNR][MPU3050][TIMERIRQ]%s: data->period = %lu\n",
 		__func__, data->period);
-/*
-	printk(KERN_NOTICE "[GSNR][MPU3050][TIMERIRQ]%s: data = 0x%x, &data->timer = 0x%x\n",
-		__func__, (unsigned int)data, (unsigned int)&(data->timer));
-	printk(KERN_NOTICE "[GSNR][MPU3050][TIMERIRQ]%s: timerirq_handler = 0x%x\n",
-		__func__, (unsigned int)timerirq_handler);*/
 
 	data->run = TRUE;
 	data->data_ready = FALSE;
+
+	init_completion(&data->timer_done);
+	setup_timer(&data->timer, timerirq_handler, (unsigned long)data);
 
 	return mod_timer(&data->timer,
 			jiffies + msecs_to_jiffies(data->period));
@@ -117,26 +115,16 @@ static int start_timerirq(struct timerirq_data *data)
 
 static int stop_timerirq(struct timerirq_data *data)
 {
-	int rc = -1;
-
 	dev_dbg(data->dev->this_device,
 		"%s current->pid %lx\n", __func__, (unsigned long)data);
 
-	printk(KERN_DEBUG "[GSNR][MPU3050][TIMERIRQ]%s: data->period = %lu, "
-			  "data->run = %d\n",
-			__func__, data->period, data->run);
-	/*
-	printk(KERN_NOTICE "[GSNR][MPU3050][TIMERIRQ]%s: data = 0x%x, &data->timer = 0x%x\n",
-		__func__, (unsigned int)data, (unsigned int)&(data->timer));*/
+	printk(KERN_DEBUG "[GSNR][MPU3050][TIMERIRQ]%s: data->period = %lu\n",
+		__func__, data->period);
 
 	if (data->run) {
 		data->run = FALSE;
 		mod_timer(&data->timer, jiffies + 1);
 		wait_for_completion(&data->timer_done);
-
-		rc = del_timer_sync(&(data->timer));
-		/*printk(KERN_DEBUG "[GSNR][MPU3050][TIMERIRQ]%s: del_timer_sync"
-			"() return = %d\n", __func__, rc);*/
 	}
 	return 0;
 }
@@ -161,9 +149,6 @@ static int timerirq_open(struct inode *inode, struct file *file)
 	dev_dbg(data->dev->this_device,
 		"%s current->pid %d\n", __func__, current->pid);
 
-	init_completion(&data->timer_done);
-	setup_timer(&data->timer, timerirq_handler, (unsigned long)data);
-
 	printk(KERN_DEBUG "[TIMERIRQ]%s: current->pid %d\n",
 		__func__, current->pid);
 
@@ -173,19 +158,13 @@ static int timerirq_open(struct inode *inode, struct file *file)
 static int timerirq_release(struct inode *inode, struct file *file)
 {
 	struct timerirq_data *data = file->private_data;
-	int rc = -1;
 
 	printk(KERN_DEBUG "[TIMERIRQ] %s: data->run = %d\n",
 				__func__, data->run);
 
-	WARN_ON(1);
-
 	if (data->run)
 		stop_timerirq(data);
-
-	rc = del_timer_sync(&(data->timer));
-	printk(KERN_DEBUG "[TIMERIRQ]%s: del_timer_sync"
-		"() return = %d\n", __func__, rc);
+	del_timer_sync(&(data->timer));
 
 	kfree(data);
 	return 0;

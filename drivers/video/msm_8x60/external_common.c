@@ -30,7 +30,7 @@
 struct external_common_state_type *external_common_state;
 EXPORT_SYMBOL(external_common_state);
 DEFINE_MUTEX(external_common_state_hpd_mutex);
-/*EXPORT_SYMBOL(external_common_state_hpd_mutex);*/
+EXPORT_SYMBOL(external_common_state_hpd_mutex);
 
 static int atoi(const char *name)
 {
@@ -365,9 +365,7 @@ static ssize_t external_common_wta_video_mode(struct device *dev,
 	external_common_state->disp_mode_list.num_of_elements = 1;
 	external_common_state->disp_mode_list.disp_mode_list[0] = video_mode;
 #elif defined(CONFIG_FB_MSM_TVOUT)
-	external_common_state->tvout_enable(0);
 	external_common_state->video_resolution = video_mode;
-	external_common_state->tvout_enable(1);
 #endif
 	DEV_DBG("%s: 'mode=%d %s' successful (sending OFF/ONLINE)\n", __func__,
 		video_mode, video_format_2string(video_mode));
@@ -683,17 +681,7 @@ static uint32 hdmi_edid_extract_ieee_reg_id(const uint8 *in_buf)
 		((uint32)vsd[6] << 8) + (uint32)vsd[5], (uint32)vsd[7] * 5);
 	return ((uint32)vsd[3] << 16) + ((uint32)vsd[2] << 8) + (uint32)vsd[1];
 }
-/*Video Capability Data Block*/
-static void hdmi_edid_extract_vcdb(const uint8 *in_buf)
-{
-	uint8 len;
-	const uint8 *vcdb = hdmi_edid_find_block(in_buf, 7, &len);
-	if(vcdb == NULL)
-		external_common_state->vcdb_support = false;
-	else
-		external_common_state->vcdb_support = true;
-	return;
-}
+
 static void hdmi_edid_extract_3d_present(const uint8 *in_buf)
 {
 	uint8 len, offset;
@@ -1060,7 +1048,7 @@ int hdmi_common_read_edid(void)
 		if (num_og_cea_blocks) {
 			ieee_reg_id =
 				hdmi_edid_extract_ieee_reg_id(edid_buf+0x80);
-			if (ieee_reg_id == 0x0c03)
+			if(ieee_reg_id == 0x0c03)
 				external_common_state->hdmi_sink = TRUE;
 			else
 				external_common_state->hdmi_sink = FALSE;
@@ -1069,7 +1057,6 @@ int hdmi_common_read_edid(void)
 				edid_buf+0x80);
 			hdmi_edid_extract_audio_data_blocks(edid_buf+0x80);
 			hdmi_edid_extract_3d_present(edid_buf+0x80);
-			hdmi_edid_extract_vcdb(edid_buf+0x80);
 		}
 		break;
 	case 2:
@@ -1159,9 +1146,9 @@ bool hdmi_common_get_video_format_from_drv_data(struct msm_fb_data_type *mfd)
 		case 1920:
 			#ifdef HTC_SUPPORT_1080P30
 			format = HDMI_VFRMT_1920x1080p30_16_9;
-			#else /* HTC_SUPPORT_1080P30 */
+			#else //HTC_SUPPORT_1080P30
 			format = HDMI_VFRMT_1920x1080p24_16_9;
-			#endif /* HTC_SUPPORT_1080P30 */
+			#endif //HTC_SUPPORT_1080P30
 			break;
 		}
 	}

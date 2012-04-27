@@ -26,21 +26,11 @@
  * IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+
 #ifndef MIPI_ORISE_H
 #define MIPI_ORISE_H
 
-/*
- *  External routine declaration
- */
-extern int mipi_status;
-extern int bl_level_prevset;
-extern struct mutex cmdlock;
-extern struct dsi_cmd_desc *mipi_power_on_cmd;
-extern struct dsi_cmd_desc *mipi_power_off_cmd;
-extern int mipi_power_on_cmd_size;
-extern int mipi_power_off_cmd_size;
-extern char ptype[60];
-
 int mipi_orise_device_register(struct msm_panel_info *pinfo,
 					u32 channel, u32 panel);
-#endif /* MIPI_ORISE_H */
+
+#endif  /* MIPI_ORISE_H */

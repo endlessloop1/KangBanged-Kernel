@@ -1178,6 +1178,14 @@ uart_ioctl(struct tty_struct *tty, struct file *filp, unsigned int cmd,
 	case TIOCSERCONFIG:
 		ret = uart_do_autoconfig(state);
 		break;
+	case TCFLSH:
+		switch (arg) {
+		case TCIFLUSH:
+		case TCIOFLUSH:
+			uart_flush_buffer(tty);
+			break;
+		}
+		break;
 
 	case TIOCSERGWILD: /* obsolete */
 	case TIOCSERSWILD: /* obsolete */

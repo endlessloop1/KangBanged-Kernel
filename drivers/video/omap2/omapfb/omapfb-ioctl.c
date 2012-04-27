@@ -28,43 +28,18 @@
 #include <linux/omapfb.h>
 #include <linux/vmalloc.h>
 
-#include <video/omapdss.h>
+#include <plat/display.h>
 #include <plat/vrfb.h>
 #include <plat/vram.h>
 
 #include "omapfb.h"
-
-static u8 get_mem_idx(struct omapfb_info *ofbi)
-{
-	if (ofbi->id == ofbi->region->id)
-		return 0;
-
-	return OMAPFB_MEM_IDX_ENABLED | ofbi->region->id;
-}
-
-static struct omapfb2_mem_region *get_mem_region(struct omapfb_info *ofbi,
-						 u8 mem_idx)
-{
-	struct omapfb2_device *fbdev = ofbi->fbdev;
-
-	if (mem_idx & OMAPFB_MEM_IDX_ENABLED)
-		mem_idx &= OMAPFB_MEM_IDX_MASK;
-	else
-		mem_idx = ofbi->id;
-
-	if (mem_idx >= fbdev->num_fbs)
-		return NULL;
-
-	return &fbdev->regions[mem_idx];
-}
 
 static int omapfb_setup_plane(struct fb_info *fbi, struct omapfb_plane_info *pi)
 {
 	struct omapfb_info *ofbi = FB2OFB(fbi);
 	struct omapfb2_device *fbdev = ofbi->fbdev;
 	struct omap_overlay *ovl;
-	struct omap_overlay_info old_info;
-	struct omapfb2_mem_region *old_rg, *new_rg;
+	struct omap_overlay_info info;
 	int r = 0;
 
 	DBG("omapfb_setup_plane\n");
@@ -77,106 +52,36 @@ static int omapfb_setup_plane(struct fb_info *fbi, struct omapfb_plane_info *pi)
 	/* XXX uses only the first overlay */
 	ovl = ofbi->overlays[0];
 
-	old_rg = ofbi->region;
-	new_rg = get_mem_region(ofbi, pi->mem_idx);
-	if (!new_rg) {
-		r = -EINVAL;
-		goto out;
-	}
-
-	/* Take the locks in a specific order to keep lockdep happy */
-	if (old_rg->id < new_rg->id) {
-		omapfb_get_mem_region(old_rg);
-		omapfb_get_mem_region(new_rg);
-	} else if (new_rg->id < old_rg->id) {
-		omapfb_get_mem_region(new_rg);
-		omapfb_get_mem_region(old_rg);
-	} else
-		omapfb_get_mem_region(old_rg);
-
-	if (pi->enabled && !new_rg->size) {
+	if (pi->enabled && !ofbi->region.size) {
 		/*
 		 * This plane's memory was freed, can't enable it
 		 * until it's reallocated.
 		 */
 		r = -EINVAL;
-		goto put_mem;
+		goto out;
 	}
 
-	ovl->get_overlay_info(ovl, &old_info);
+	ovl->get_overlay_info(ovl, &info);
 
-	if (old_rg != new_rg) {
-		ofbi->region = new_rg;
-		set_fb_fix(fbi);
-	}
+	info.pos_x = pi->pos_x;
+	info.pos_y = pi->pos_y;
+	info.out_width = pi->out_width;
+	info.out_height = pi->out_height;
+	info.enabled = pi->enabled;
 
-	if (pi->enabled) {
-		struct omap_overlay_info info;
+	r = ovl->set_overlay_info(ovl, &info);
+	if (r)
+		goto out;
 
-		r = omapfb_setup_overlay(fbi, ovl, pi->pos_x, pi->pos_y,
-			pi->out_width, pi->out_height);
+	if (ovl->manager) {
+		r = ovl->manager->apply(ovl->manager);
 		if (r)
-			goto undo;
-
-		ovl->get_overlay_info(ovl, &info);
-
-		if (!info.enabled) {
-			info.enabled = pi->enabled;
-			r = ovl->set_overlay_info(ovl, &info);
-			if (r)
-				goto undo;
-		}
-	} else {
-		struct omap_overlay_info info;
-
-		ovl->get_overlay_info(ovl, &info);
-
-		info.enabled = pi->enabled;
-		info.pos_x = pi->pos_x;
-		info.pos_y = pi->pos_y;
-		info.out_width = pi->out_width;
-		info.out_height = pi->out_height;
-
-		r = ovl->set_overlay_info(ovl, &info);
-		if (r)
-			goto undo;
+			goto out;
 	}
 
-	if (ovl->manager)
-		ovl->manager->apply(ovl->manager);
-
-	/* Release the locks in a specific order to keep lockdep happy */
-	if (old_rg->id > new_rg->id) {
-		omapfb_put_mem_region(old_rg);
-		omapfb_put_mem_region(new_rg);
-	} else if (new_rg->id > old_rg->id) {
-		omapfb_put_mem_region(new_rg);
-		omapfb_put_mem_region(old_rg);
-	} else
-		omapfb_put_mem_region(old_rg);
-
-	return 0;
-
- undo:
-	if (old_rg != new_rg) {
-		ofbi->region = old_rg;
-		set_fb_fix(fbi);
-	}
-
-	ovl->set_overlay_info(ovl, &old_info);
- put_mem:
-	/* Release the locks in a specific order to keep lockdep happy */
-	if (old_rg->id > new_rg->id) {
-		omapfb_put_mem_region(old_rg);
-		omapfb_put_mem_region(new_rg);
-	} else if (new_rg->id > old_rg->id) {
-		omapfb_put_mem_region(new_rg);
-		omapfb_put_mem_region(old_rg);
-	} else
-		omapfb_put_mem_region(old_rg);
- out:
-	dev_err(fbdev->dev, "setup_plane failed\n");
-
+out:
+	if (r)
+		dev_err(fbdev->dev, "setup_plane failed\n");
 	return r;
 }
 
@@ -187,8 +92,8 @@ static int omapfb_query_plane(struct fb_info *fbi, struct omapfb_plane_info *pi)
 	if (ofbi->num_overlays != 1) {
 		memset(pi, 0, sizeof(*pi));
 	} else {
-		struct omap_overlay *ovl;
 		struct omap_overlay_info *ovli;
+		struct omap_overlay *ovl;
 
 		ovl = ofbi->overlays[0];
 		ovli = &ovl->info;
@@ -198,7 +103,6 @@ static int omapfb_query_plane(struct fb_info *fbi, struct omapfb_plane_info *pi)
 		pi->enabled = ovli->enabled;
 		pi->channel_out = 0; /* xxx */
 		pi->mirror = 0;
-		pi->mem_idx = get_mem_idx(ofbi);
 		pi->out_width = ovli->out_width;
 		pi->out_height = ovli->out_height;
 	}
@@ -211,7 +115,7 @@ static int omapfb_setup_mem(struct fb_info *fbi, struct omapfb_mem_info *mi)
 	struct omapfb_info *ofbi = FB2OFB(fbi);
 	struct omapfb2_device *fbdev = ofbi->fbdev;
 	struct omapfb2_mem_region *rg;
-	int r = 0, i;
+	int r, i;
 	size_t size;
 
 	if (mi->type > OMAPFB_MEMTYPE_MAX)
@@ -219,44 +123,22 @@ static int omapfb_setup_mem(struct fb_info *fbi, struct omapfb_mem_info *mi)
 
 	size = PAGE_ALIGN(mi->size);
 
-	rg = ofbi->region;
+	rg = &ofbi->region;
 
-	down_write_nested(&rg->lock, rg->id);
-	atomic_inc(&rg->lock_count);
-
-	if (atomic_read(&rg->map_count)) {
-		r = -EBUSY;
-		goto out;
-	}
-
-	for (i = 0; i < fbdev->num_fbs; i++) {
-		struct omapfb_info *ofbi2 = FB2OFB(fbdev->fbs[i]);
-		int j;
-
-		if (ofbi2->region != rg)
-			continue;
-
-		for (j = 0; j < ofbi2->num_overlays; j++) {
-			if (ofbi2->overlays[j]->info.enabled) {
-				r = -EBUSY;
-				goto out;
-			}
-		}
+	for (i = 0; i < ofbi->num_overlays; i++) {
+		if (ofbi->overlays[i]->info.enabled)
+			return -EBUSY;
 	}
 
 	if (rg->size != size || rg->type != mi->type) {
 		r = omapfb_realloc_fbmem(fbi, size, mi->type);
 		if (r) {
 			dev_err(fbdev->dev, "realloc fbmem failed\n");
-			goto out;
+			return r;
 		}
 	}
 
- out:
-	atomic_dec(&rg->lock_count);
-	up_write(&rg->lock);
-
-	return r;
+	return 0;
 }
 
 static int omapfb_query_mem(struct fb_info *fbi, struct omapfb_mem_info *mi)
@@ -264,13 +146,11 @@ static int omapfb_query_mem(struct fb_info *fbi, struct omapfb_mem_info *mi)
 	struct omapfb_info *ofbi = FB2OFB(fbi);
 	struct omapfb2_mem_region *rg;
 
-	rg = omapfb_get_mem_region(ofbi->region);
+	rg = &ofbi->region;
 	memset(mi, 0, sizeof(*mi));
 
 	mi->size = rg->size;
 	mi->type = rg->type;
-
-	omapfb_put_mem_region(rg);
 
 	return 0;
 }
@@ -610,7 +490,6 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 		struct omapfb_vram_info		vram_info;
 		struct omapfb_tearsync_info	tearsync_info;
 		struct omapfb_display_info	display_info;
-		u32				crt;
 	} p;
 
 	int r = 0;
@@ -769,17 +648,6 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 			r = -EFAULT;
 		break;
 
-	case FBIO_WAITFORVSYNC:
-		if (get_user(p.crt, (__u32 __user *)arg)) {
-			r = -EFAULT;
-			break;
-		}
-		if (p.crt != 0) {
-			r = -ENODEV;
-			break;
-		}
-		/* FALLTHROUGH */
-
 	case OMAPFB_WAITFORVSYNC:
 		DBG("ioctl WAITFORVSYNC\n");
 		if (!display) {
@@ -870,7 +738,7 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 			break;
 		}
 
-		if (!display || !display->driver->enable_te) {
+		if (!display->driver->enable_te) {
 			r = -ENODEV;
 			break;
 		}
@@ -895,16 +763,8 @@ int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg)
 
 		p.display_info.xres = xres;
 		p.display_info.yres = yres;
-
-		if (display->driver->get_dimensions) {
-			u32 w, h;
-			display->driver->get_dimensions(display, &w, &h);
-			p.display_info.width = w;
-			p.display_info.height = h;
-		} else {
-			p.display_info.width = 0;
-			p.display_info.height = 0;
-		}
+		p.display_info.width = 0;
+		p.display_info.height = 0;
 
 		if (copy_to_user((void __user *)arg, &p.display_info,
 					sizeof(p.display_info)))

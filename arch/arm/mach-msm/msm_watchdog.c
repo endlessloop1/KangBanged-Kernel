@@ -388,8 +388,8 @@ static void init_watchdog_work(struct work_struct *work)
 	delay_time = msecs_to_jiffies(PET_DELAY);
 
 	/* 32768 ticks = 1 second */
-	writel(32768*16, WDT0_BARK_TIME);
-	writel(32768*20, WDT0_BITE_TIME);
+	writel(32768*8, WDT0_BARK_TIME);
+	writel(32768*12, WDT0_BITE_TIME);
 
 	queue_delayed_work(msm_watchdog_wq, &dogwork_struct, delay_time);
 

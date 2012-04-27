@@ -14,6 +14,7 @@ endif
 obj-y += pwrtest.o
 obj-$(CONFIG_ARCH_QSD8X50) += sirc.o
 obj-y += proc_comm.o
+obj-y += acpuclock.o
 obj-$(CONFIG_ARCH_MSM_ARM11) += acpuclock-arm11.o idle.o
 obj-$(CONFIG_ARCH_QSD8X50) += arch-init-scorpion.o acpuclock-scorpion.o
 obj-$(CONFIG_ARCH_MSM7X30) += acpuclock-7x30.o internal_power_rail.o
@@ -563,7 +564,8 @@ obj-y	+= gpio-v2.o
 else
 obj-y	+= gpio.o generic_gpio.o
 endif
-obj-$(CONFIG_MSM_SLEEP_STATS) += msm_sleep_stats.o
+obj-$(CONFIG_MSM_SLEEP_STATS) += msm_sleep_stats.o idle_stats_device.o
+
 obj-$(CONFIG_MSM_SHOW_RESUME_IRQ) += msm_show_resume_irq.o
 obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-tpa2018d1.o
 obj-$(CONFIG_MACH_MAHIMAHI) += board-mahimahi-smb329.o

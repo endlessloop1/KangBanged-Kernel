@@ -136,12 +136,6 @@ static void send_cable_connect_notify(int cable_type)
 			pInfo->configure_ac_9v_gpio(0);
 	}
 
-	if (cable_type > CONNECT_TYPE_NONE &&
-			pInfo->accessory_type == DOCK_STATE_DMB) {
-		CABLE_INFO("%s: DMB presents. Disabling charge.\n", __func__);
-		cable_type = CONNECT_TYPE_CLEAR;
-	}
-
 	list_for_each_entry(notifier,
 		&g_lh_calbe_detect_notifier_list,
 		cable_notifier_link) {
@@ -374,7 +368,6 @@ static void cable_detect_handler(struct work_struct *w)
 #endif
 	case DOCK_STATE_DMB:
 		CABLE_INFO("DMB inserted\n");
-		send_cable_connect_notify(CONNECT_TYPE_CLEAR);
 		switch_set_state(&dock_switch, DOCK_STATE_DMB);
 		pInfo->accessory_type = DOCK_STATE_DMB;
 		break;

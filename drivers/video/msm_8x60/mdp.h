@@ -301,7 +301,7 @@ struct mdp_reg {
 #define CLR_CR CLR_R
 
 /* from lsb to msb */
-#define MDP_GET_PACK_PATTERN(a, x, y, z, bit) (((a)<<(bit*3))|((x)<<(bit*2))|((y)<<bit)|(z))
+#define MDP_GET_PACK_PATTERN(a,x,y,z,bit) (((a)<<(bit*3))|((x)<<(bit*2))|((y)<<bit)|(z))
 
 /*
  * 0x0000 0x0004 0x0008 MDP sync config
@@ -695,8 +695,6 @@ void mdp_disable_irq_nosync(uint32 term);
 int mdp_get_bytes_per_pixel(uint32_t format,
 				 struct msm_fb_data_type *mfd);
 int mdp_set_core_clk(uint16 perf_level);
-unsigned long mdp_get_core_clk(void);
-unsigned long mdp_perf_level2clk_rate(uint32 perf_level);
 
 #ifdef CONFIG_MSM_BUS_SCALING
 int mdp_bus_scale_update_request(uint32_t index);
@@ -716,54 +714,4 @@ int mdp_debugfs_init(void);
 void mdp_dma_s_update(struct msm_fb_data_type *mfd);
 int mdp_start_histogram(struct fb_info *info);
 int mdp_stop_histogram(struct fb_info *info);
-
-extern ktime_t mdp_dma2_last_update_time;
-
-extern uint32 mdp_dma2_update_time_in_usec;
-extern int mdp_lcd_rd_cnt_offset_slow;
-extern int mdp_lcd_rd_cnt_offset_fast;
-extern int mdp_usec_diff_threshold;
-
-#ifdef CONFIG_FB_MSM_LCDC
-extern int first_pixel_start_x;
-extern int first_pixel_start_y;
-#endif
-
-extern atomic_t dsi_unset_cnt;
-
-#ifdef CONFIG_FB_MSM_MIPI_DSI
-extern atomic_t dsi_unset_cnt;
-extern struct completion dsi_unset_comp;
-#endif
-
-#ifdef CONFIG_FB_MSM_DTV
-extern atomic_t mdp_dtv_on;
-#endif
-
-#ifdef CONFIG_FB_MSM_DTV
-extern struct mdp4_overlay_pipe *dtv_pipe;
-#endif
-
-extern atomic_t mdp_block_power_cnt[MDP_MAX_BLOCK];
-extern unsigned long mdp_timer_duration;
-
-extern atomic_t need_soft_reset;
-
-extern spinlock_t mdp_spin_lock;
-extern struct workqueue_struct *mdp_vsync_wq;
-extern int vsync_mode;
-
-extern uint32 mdp_intr_mask;
-
-extern u32 msm_fb_debug_enabled;
-extern struct workqueue_struct *mdp_dma_wq;
-
-extern struct completion ov_comp;
-extern atomic_t ov_play;
-extern atomic_t ov_unset;
-
-#ifdef CONFIG_FB_MSM_LOGO
-extern int load_565rle_image(char *filename);
-#endif
-
 #endif /* MDP_H */

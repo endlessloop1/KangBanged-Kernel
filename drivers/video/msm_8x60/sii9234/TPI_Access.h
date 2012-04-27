@@ -15,12 +15,12 @@
  *
  *****************************************************************************/
 
-uint8_t ReadByteTPI(uint8_t Offset);
-void WriteByteTPI(uint8_t Offset, uint8_t Data);
-void ReadModifyWriteTPI(uint8_t Offset, uint8_t Mask, uint8_t Data);
+uint8_t ReadByteTPI (uint8_t Offset);
+void WriteByteTPI (uint8_t Offset, uint8_t Data);
+void ReadModifyWriteTPI (uint8_t Offset, uint8_t Mask, uint8_t Data);
 
-uint8_t ReadByteCBUS(uint8_t Offset);
-void WriteByteCBUS(uint8_t Offset, uint8_t Data);
+uint8_t ReadByteCBUS (uint8_t Offset);
+void WriteByteCBUS (uint8_t Offset, uint8_t Data);
 void ReadModifyWriteCBUS(uint8_t Offset, uint8_t Mask, uint8_t Value);
 
 #define	TPI_SLAVE_ADDR	0x72
@@ -31,6 +31,6 @@ void ReadModifyWriteCBUS(uint8_t Offset, uint8_t Mask, uint8_t Value);
 #define INDEXED_PAGE_1		0x02
 #define INDEXED_PAGE_2		0x03
 
-uint8_t ReadIndexedRegister(uint8_t PageNum, uint8_t Offset);
-void WriteIndexedRegister(uint8_t PageNum, uint8_t Offset, uint8_t Data);
-void ReadModifyWriteIndexedRegister(uint8_t PageNum, uint8_t Offset, uint8_t Mask, uint8_t Data);
+uint8_t ReadIndexedRegister (uint8_t PageNum, uint8_t Offset);
+void WriteIndexedRegister (uint8_t PageNum, uint8_t Offset, uint8_t Data);
+void ReadModifyWriteIndexedRegister (uint8_t PageNum, uint8_t Offset, uint8_t Mask, uint8_t Data);

@@ -73,7 +73,6 @@ static short akmd_delay;
 
 static int debug_flag;
 static int debug_flag_fatal_err;
-static int fatal_err_pr_count;
 
 static atomic_t suspend_flag = ATOMIC_INIT(0);
 static atomic_t PhoneOn_flag = ATOMIC_INIT(0);
@@ -273,11 +272,11 @@ static int AKECS_TransRBuff(char *rbuf, int size)
 	if (!atomic_read(&data_ready)) {
 		if (!atomic_read(&suspend_flag)) {
 			D("%s: DATA\n", __func__);
+			debug_flag_fatal_err = 1;
 			failure_count++;
 			if (failure_count >= MAX_FAILURE_COUNT) {
 				E("%s: successive %d failure.\n",
 				       __func__, failure_count);
-				debug_flag_fatal_err = 1;
 				atomic_set(&open_flag, -1);
 				wake_up(&open_wq);
 				failure_count = 0;
@@ -323,27 +322,20 @@ static void AKECS_Report_Value(short *rbuf)
 		atomic_read(&m_flag), atomic_read(&a_flag),
 		atomic_read(&t_flag), atomic_read(&mv_flag));
 
-	if (fatal_err_pr_count < 10) {
-		DIF_FATAL_ERR(
-			"AKECS_Report_Value: yaw = %d, pitch = %d,"
-			" roll = %d\n", rbuf[0], rbuf[1], rbuf[2]);
-		DIF_FATAL_ERR(
-		"          G_Sensor:   x = %d LSB, y = %d LSB, z = "
-			"%d LSB\n", rbuf[6], rbuf[7], rbuf[8]);
-		DIF_FATAL_ERR(
-		"          Compass:   x = %d LSB, y = %d LSB, z = %d"
-			" LSB\n", rbuf[9], rbuf[10], rbuf[11]);
+	DIF_FATAL_ERR(
+		"AKECS_Report_Value: yaw = %d, pitch = %d,"
+		" roll = %d\n", rbuf[0], rbuf[1], rbuf[2]);
+	DIF_FATAL_ERR(
+	"          G_Sensor:   x = %d LSB, y = %d LSB, z = "
+		"%d LSB\n", rbuf[6], rbuf[7], rbuf[8]);
+	DIF_FATAL_ERR(
+	"          Compass:   x = %d LSB, y = %d LSB, z = %d"
+		" LSB\n", rbuf[9], rbuf[10], rbuf[11]);
 
-		DIF_FATAL_ERR("(m, a, t, mv) = (0x%x, 0x%x, 0x%x,"
-			" 0x%x)\n",
-			atomic_read(&m_flag), atomic_read(&a_flag),
-			atomic_read(&t_flag), atomic_read(&mv_flag));
-
-		fatal_err_pr_count++;
-	} else {
-		fatal_err_pr_count = 0;
-		debug_flag_fatal_err = 0;
-	}
+	DIF_FATAL_ERR("(m, a, t, mv) = (0x%x, 0x%x, 0x%x,"
+		" 0x%x)\n",
+		atomic_read(&m_flag), atomic_read(&a_flag),
+		atomic_read(&t_flag), atomic_read(&mv_flag));
 
 	/* Report magnetic sensor information */
 	if (atomic_read(&m_flag)) {
@@ -426,7 +418,6 @@ static int akm_aot_release(struct inode *inode, struct file *file)
 	printk(KERN_INFO "[COMP] Compass disable\n");
 
 	debug_flag_fatal_err = 0;
-	fatal_err_pr_count = 0;
 
 	atomic_set(&reserve_open_flag, 0);
 	atomic_set(&open_flag, 0);
@@ -543,7 +534,7 @@ akmd_ioctl(struct inode *inode, struct file *file, unsigned int cmd,
 
 	char msg[RBUFF_SIZE_8975 + 1] = "", rwbuf[RBUFF_SIZE_8975 + 1] = "";
 	int ret = -1, status;
-	short mode = 0, value[12], delay;
+	short mode, value[12], delay;
 	short layouts[4][3][3];
 	int i, j, k;
 
@@ -1034,7 +1025,6 @@ int akm8975_probe(struct i2c_client *client, const struct i2c_device_id *id)
 
 	debug_flag = 0;
 	debug_flag_fatal_err = 0;
-	fatal_err_pr_count = 0;
 
 #ifdef AKM_EARLY_SUSPEND
 	akm->early_suspend_akm.suspend = akm8975_early_suspend;

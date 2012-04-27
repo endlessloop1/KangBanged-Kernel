@@ -515,12 +515,21 @@ static struct msm_bus_vectors grp3d_init_vectors[] = {
 	},
 };
 
+static struct msm_bus_vectors grp3d_low_vectors[] = {
+	{
+		.src = MSM_BUS_MASTER_GRAPHICS_3D,
+		.dst = MSM_BUS_SLAVE_EBI_CH0,
+		.ab = 0,
+		.ib = KGSL_CONVERT_TO_MBPS(990),
+	},
+};
+
 static struct msm_bus_vectors grp3d_nominal_low_vectors[] = {
 	{
 		.src = MSM_BUS_MASTER_GRAPHICS_3D,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
 		.ab = 0,
-		.ib = 1300000000U,
+		.ib = KGSL_CONVERT_TO_MBPS(1300),
 	},
 };
 
@@ -529,7 +538,7 @@ static struct msm_bus_vectors grp3d_nominal_high_vectors[] = {
 		.src = MSM_BUS_MASTER_GRAPHICS_3D,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
 		.ab = 0,
-		.ib = 2008000000U,
+		.ib = KGSL_CONVERT_TO_MBPS(2008),
 	},
 };
 
@@ -538,8 +547,7 @@ static struct msm_bus_vectors grp3d_max_vectors[] = {
 		.src = MSM_BUS_MASTER_GRAPHICS_3D,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
 		.ab = 0,
-		// .ib = 200800000U,
-		.ib = 2096000000U,		// HTC: Raise up bw due to avoid underrun
+		.ib = KGSL_CONVERT_TO_MBPS(2484),
 	},
 };
 
@@ -547,6 +555,10 @@ static struct msm_bus_paths grp3d_bus_scale_usecases[] = {
 	{
 		ARRAY_SIZE(grp3d_init_vectors),
 		grp3d_init_vectors,
+	},
+	{
+		ARRAY_SIZE(grp3d_low_vectors),
+		grp3d_low_vectors,
 	},
 	{
 		ARRAY_SIZE(grp3d_nominal_low_vectors),
@@ -583,8 +595,7 @@ static struct msm_bus_vectors grp2d0_max_vectors[] = {
 		.src = MSM_BUS_MASTER_GRAPHICS_2D_CORE0,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
 		.ab = 0,
-		// .ib = 248000000,
-		.ib = 2096000000U,	// HTC:
+		.ib = KGSL_CONVERT_TO_MBPS(990),
 	},
 };
 
@@ -619,8 +630,7 @@ static struct msm_bus_vectors grp2d1_max_vectors[] = {
 		.src = MSM_BUS_MASTER_GRAPHICS_2D_CORE1,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
 		.ab = 0,
-		// .ib = 248000000,		
-		.ib = 2096000000U,		// HTC
+		.ib = KGSL_CONVERT_TO_MBPS(990),
 	},
 };
 
@@ -662,16 +672,24 @@ static struct kgsl_device_platform_data kgsl_3d0_pdata = {
 	.pwr_data = {
 		.pwrlevel = {
 			{
-				.gpu_freq = 266667000,
-				.bus_freq = 3,
+				.gpu_freq = 320000000,
+				.bus_freq = 4,
+				.io_fraction = 0,
 			},
 			{
 				.gpu_freq = 228571000,
-				.bus_freq = 2,
+				.bus_freq = 3,
+				.io_fraction = 33,
 			},
 			{
 				.gpu_freq = 200000000,
+				.bus_freq = 2,
+				.io_fraction = 100,
+			},
+			{
+				.gpu_freq = 177778000,
 				.bus_freq = 1,
+				.io_fraction = 100,
 			},
 			{
 				.gpu_freq = 27000000,
@@ -679,14 +697,10 @@ static struct kgsl_device_platform_data kgsl_3d0_pdata = {
 			},
 		},
 		.init_level = 0,
-		.num_levels = 4,
+		.num_levels = 5,
 		.set_grp_async = NULL,
 		.idle_timeout = HZ/5,
-#ifdef CONFIG_MSM_BUS_SCALING
 		.nap_allowed = true,
-		.idle_pass = true,
-#endif
-		.pwrrail_first = true,
 	},
 	.clk = {
 		.name = {
@@ -733,11 +747,11 @@ static struct kgsl_device_platform_data kgsl_2d0_pdata = {
 	.pwr_data = {
 		.pwrlevel = {
 			{
-				.gpu_freq = 200000000,
+				.gpu_freq = 228571000,
 				.bus_freq = 1,
 			},
 			{
-				.gpu_freq = 200000000,
+				.gpu_freq = 228571000,
 				.bus_freq = 0,
 			},
 		},
@@ -745,10 +759,7 @@ static struct kgsl_device_platform_data kgsl_2d0_pdata = {
 		.num_levels = 2,
 		.set_grp_async = NULL,
 		.idle_timeout = HZ/10,
-#ifdef CONFIG_MSM_BUS_SCALING
 		.nap_allowed = true,
-#endif
-		.pwrrail_first = true,
 	},
 	.clk = {
 		.name = {
@@ -791,11 +802,11 @@ static struct kgsl_device_platform_data kgsl_2d1_pdata = {
 	.pwr_data = {
 		.pwrlevel = {
 			{
-				.gpu_freq = 200000000,
+				.gpu_freq = 228571000,
 				.bus_freq = 1,
 			},
 			{
-				.gpu_freq = 200000000,
+				.gpu_freq = 228571000,
 				.bus_freq = 0,
 			},
 		},
@@ -803,10 +814,7 @@ static struct kgsl_device_platform_data kgsl_2d1_pdata = {
 		.num_levels = 2,
 		.set_grp_async = NULL,
 		.idle_timeout = HZ/10,
-#ifdef CONFIG_MSM_BUS_SCALING
 		.nap_allowed = true,
-#endif
-		.pwrrail_first = true,
 	},
 	.clk = {
 		.name = {
@@ -1743,7 +1751,7 @@ int msm_add_host(unsigned int host, struct msm_usb_host_platform_data *plat)
 }
 #endif
 
-#ifdef CONFIG_USB_ANDROID_QCT_DIAG
+#ifdef CONFIG_USB_G_ANDROID_QCT_DIAG
 #define PID_MAGIC_ID		0x71432909
 #define SERIAL_NUM_MAGIC_ID	0x61945374
 #define SERIAL_NUMBER_LENGTH	127

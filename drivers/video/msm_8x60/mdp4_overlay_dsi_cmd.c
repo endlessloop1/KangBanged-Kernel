@@ -37,22 +37,23 @@
 #include "msm_fb.h"
 #include "mdp4.h"
 #include "mipi_dsi.h"
-#include <mach/debug_display.h>
 
 static struct mdp4_overlay_pipe *dsi_pipe;
-static struct msm_fb_data_type *dsi_mfd = NULL;
+static struct msm_fb_data_type *dsi_mfd;
 static atomic_t busy_wait_cnt;
 
 static int vsync_start_y_adjust = 4;
+extern struct completion ov_comp;
+extern atomic_t ov_play;
+extern atomic_t ov_unset;
 
 #define OVERLAY_BLT_EMBEDDED
-/* #define OVDEBUG 1 */
-/* #define BLTDEBUG 1 */
-/* #define PADDING_PERFORMANCE */
+//#define OVDEBUG 1
+//#define BLTDEBUG 1
+//#define PADDING_PERFORMANCE
 #define PADDING_ENABLE	2
 #define PADDING_DISABLE	3
 
-static int writeback_offset;
 
 static __u32 msm_fb_line_length(__u32 fb_index, __u32 xres, int bpp)
 {
@@ -67,29 +68,25 @@ static __u32 msm_fb_line_length(__u32 fb_index, __u32 xres, int bpp)
 		return xres * bpp;
 }
 
-void dsi_busy_check(struct msm_fb_data_type* curr_dsi_mfd)
+void dsi_busy_check(void)
 {
-	if (curr_dsi_mfd && dsi_pipe) {
-		mdp4_dsi_cmd_dma_busy_wait(curr_dsi_mfd, dsi_pipe);
+	if(dsi_mfd && dsi_pipe) {
+		mdp4_dsi_cmd_dma_busy_wait(dsi_mfd, dsi_pipe);
 		if (dsi_pipe->blt_addr)
-			mdp4_dsi_blt_dmap_busy_wait(curr_dsi_mfd);
-	}
+			mdp4_dsi_blt_dmap_busy_wait(dsi_mfd);
+        }
 }
 
-struct msm_fb_data_type* dsi_mutex_lock(void)
+void dsi_mutex_lock(void)
 {
-	struct msm_fb_data_type* curr_dsi_mfd = dsi_mfd;
-
-	if (curr_dsi_mfd)
-		mutex_lock(&curr_dsi_mfd->dma->ov_mutex);
-
-	return curr_dsi_mfd;
+	if(dsi_mfd)
+		mutex_lock(&dsi_mfd->dma->ov_mutex);
 }
 
-void dsi_mutex_unlock(struct msm_fb_data_type* curr_dsi_mfd)
+void dsi_mutex_unlock(void)
 {
-	if (curr_dsi_mfd)
-		mutex_unlock(&curr_dsi_mfd->dma->ov_mutex);
+	if(dsi_mfd)
+		mutex_unlock(&dsi_mfd->dma->ov_mutex);
 }
 
 void mdp4_mipi_vsync_enable(struct msm_fb_data_type *mfd,
@@ -122,12 +119,13 @@ void mdp4_mipi_vsync_enable(struct msm_fb_data_type *mfd,
 	}
 }
 
-/* maintain virtual address for framebuffer pin pon buffer */
-struct {
+//maintain virtual address for framebuffer pin pon buffer
+struct
+{
 	unsigned char *fbvir;
 	unsigned char *fbphy;
 	bool	is_3d;
-} fb_addr[2] = { };
+}fb_addr[2] = {};
 
 void mdp4_overlay_move_padding(struct msm_fb_data_type *mfd, unsigned char *fbvir, bool is_3d)
 {
@@ -145,14 +143,14 @@ void mdp4_overlay_move_padding(struct msm_fb_data_type *mfd, unsigned char *fbvi
 	tbegin = ktime_get();
 #endif
 
-	/* total bytes per line in 3D mode */
+	//total bytes per line in 3D mode
 	linefor3d = fbi->fix.line_length*2;
 
-	/* total byes per half line */
+	//total byes per half line
 	lineforhalf = fbi->fix.line_length;
 
-	/* there are 4 pixels shift between L and R frames which are 16 bytes */
-	if (is_3d) {
+	//there are 4 pixels shift between L and R frames which are 16 bytes
+	if(is_3d) {
 		src_off = lineforhalf;
 		dst_off = lineforhalf - 16;
 	} else {
@@ -160,18 +158,19 @@ void mdp4_overlay_move_padding(struct msm_fb_data_type *mfd, unsigned char *fbvi
 		dst_off = lineforhalf;
 	}
 
-	if (fbvir) {
-		for (i = 0; i < fbi->var.yres/2; i++) {
+	if(fbvir) {
+		for(i = 0; i < fbi->var.yres/2; i++) {
 			memmove(fbvir+dst_off, fbvir+src_off, fbi->var.xres*4);
 			fbvir += linefor3d;
 		}
-	} else
-		PR_DISP_INFO("%s(%d)fail to get virtual address of framebuffer\n", __func__, __LINE__);
+	}
+	else
+		pr_info("%s(%d)fail to get virtual address of framebuffer\n", __func__, __LINE__);
 
 #ifdef PADDING_PERFORMANCE
 	tend = ktime_get();
 	dt = ktime_to_ns(ktime_sub(tend, tbegin));
-	PR_DISP_INFO("%s(%d) time %llu\n", __func__, __LINE__, dt);
+	pr_info("%s(%d) time %llu\n", __func__, __LINE__, dt);
 #endif
 
 }
@@ -184,29 +183,31 @@ void mdp4_overlay_handle_padding(struct msm_fb_data_type *mfd, bool is_3d)
 	MDPIBUF *iBuf = &mfd->ibuf;
 	bool found = false;
 
-	/* get virtual address */
-	for (i = 0; i < 2; i++) {
-		if (fb_addr[i].fbphy == iBuf->buf) {
-			fbvir = (unsigned char *)fb_addr[i].fbvir;
+	//get virtual address
+	for(i = 0; i < 2; i++) {
+		if(fb_addr[i].fbphy == iBuf->buf) {
+			fbvir = (unsigned char*)fb_addr[i].fbvir;
 			found = true;
 			break;
-		} else if (fb_addr[i].fbphy == NULL || fb_addr[i].fbvir == NULL) {
-			fb_addr[i].fbphy = (unsigned char *) iBuf->buf;
+		} else if(fb_addr[i].fbphy == NULL || fb_addr[i].fbvir == NULL) {
+			fb_addr[i].fbphy = (unsigned char*) iBuf->buf;
 			fb_addr[i].fbvir = ioremap((unsigned long)fb_addr[i].fbphy, fbi->fix.smem_len/2);
-			fbvir = (unsigned char *)fb_addr[i].fbvir;
+			fbvir = (unsigned char*)fb_addr[i].fbvir;
+			//pr_info("%s(%d) call ioremap fbphy %p fbvir %p\n", __func__, __LINE__, fb_addr[i].fbphy, fb_addr[i].fbvir);
 			found = true;
 			break;
 		}
 	}
-	if (!found)
+	if(!found)
 		return;
 
-	if (is_3d) {
+	if(is_3d) {
 		mdp4_overlay_move_padding(mfd, fbvir, is_3d);
 		fb_addr[i].is_3d = is_3d;
-	} else {
-		for (i = 0; i < 2; i++) {
-			if (fb_addr[i].is_3d) {
+	}
+	else {
+		for(i =0; i < 2; i++) {
+			if(fb_addr[i].is_3d) {
 				mdp4_overlay_move_padding(mfd, fb_addr[i].fbvir, is_3d);
 				fb_addr[i].is_3d = false;
 			}
@@ -217,7 +218,6 @@ void mdp4_overlay_handle_padding(struct msm_fb_data_type *mfd, bool is_3d)
 void mdp4_overlay_update_dsi_cmd(struct msm_fb_data_type *mfd)
 {
 	MDPIBUF *iBuf = &mfd->ibuf;
-	struct fb_info *fbi;
 	uint8 *src;
 	int ptype;
 	struct mdp4_overlay_pipe *pipe;
@@ -253,14 +253,9 @@ void mdp4_overlay_update_dsi_cmd(struct msm_fb_data_type *mfd)
 
 		dsi_pipe = pipe; /* keep it */
 
-		fbi = mfd->fbi;
-		bpp = fbi->var.bits_per_pixel / 8;
-		src = (uint8 *) iBuf->buf;
-		writeback_offset = mdp4_overlay_writeback_setup(
-						fbi, pipe, src, bpp);
 #ifdef OVERLAY_BLT_EMBEDDED
 		pipe->blt_base = mfd->blt_base;
-		PR_DISP_INFO("%s: blt_base=%08x\n", __func__,
+		pr_info("%s: blt_base=%08x\n", __func__,
 			(uint32_t)pipe->blt_base);
 #endif
 		/*
@@ -330,7 +325,7 @@ void mdp4_overlay_update_dsi_cmd(struct msm_fb_data_type *mfd)
 
 void mdp4_mipi_read_ptr_intr(void)
 {
-	printk(KERN_INFO "%s: INTR\n", __func__);
+printk("%s: INTR\n", __func__);
 }
 
 void mdp4_dsi_cmd_3d(struct msm_fb_data_type *mfd, struct msmfb_overlay_3d *r3d)
@@ -341,10 +336,10 @@ void mdp4_dsi_cmd_3d(struct msm_fb_data_type *mfd, struct msmfb_overlay_3d *r3d)
 	int bpp;
 	uint8 *src = NULL;
 
-	if (r3d->is_3d == PADDING_ENABLE || r3d->is_3d == PADDING_DISABLE) {
+	if(r3d->is_3d == PADDING_ENABLE || r3d->is_3d == PADDING_DISABLE) {
 		mfd->enable_uipadding = r3d->is_3d;
 
-		if (r3d->is_3d == PADDING_DISABLE)
+		if(r3d->is_3d == PADDING_DISABLE)
 			mdp4_overlay_handle_padding(mfd, false);
 
 		return;
@@ -353,7 +348,7 @@ void mdp4_dsi_cmd_3d(struct msm_fb_data_type *mfd, struct msmfb_overlay_3d *r3d)
 	if (dsi_pipe == NULL)
 		return;
 
-	PR_DISP_INFO("%s(%d) is3d %d pid=%d\n", __func__, __LINE__, r3d->is_3d, current->pid);
+	pr_info("%s(%d) is3d %d pid=%d\n", __func__, __LINE__, r3d->is_3d, current->pid);
 
 	dsi_pipe->is_3d = r3d->is_3d;
 	dsi_pipe->src_height_3d = r3d->height;
@@ -396,7 +391,7 @@ void mdp4_dsi_cmd_3d(struct msm_fb_data_type *mfd, struct msmfb_overlay_3d *r3d)
 	pipe->dst_y = 0;
 	pipe->dst_x = 0;
 	pipe->srcp0_addr = (uint32)src;
-	PR_DISP_DEBUG("%s(%d) is3d %d srcx %d srcy %d srcw %d srch %d dstx %d dsty %d dstw %d dsth %d ystride %d\n", __func__, __LINE__, pipe->is_3d,
+	pr_debug("%s(%d) is3d %d srcx %d srcy %d srcw %d srch %d dstx %d dsty %d dstw %d dsth %d ystride %d\n", __func__, __LINE__, pipe->is_3d,
 			pipe->src_x, pipe->src_y, pipe->src_w, pipe->src_h,
 			pipe->dst_x, pipe->dst_y, pipe->dst_w, pipe->dst_h, pipe->srcp0_ystride);
 
@@ -420,13 +415,13 @@ void mdp4_dsi_cmd_3d(struct msm_fb_data_type *mfd, struct msmfb_overlay_3d *r3d)
 	wmb();
 }
 
-#ifdef CONFIG_FB_MSM_OVERLAY_WRITEBACK
+#ifdef OVERLAY_BLT_EMBEDDED
 int mdp4_dsi_overlay_blt_start(struct msm_fb_data_type *mfd)
 {
 	unsigned long flag;
 
 	if (dsi_pipe->blt_addr == 0) {
-	PR_DISP_INFO("%s: blt_end=%d blt_addr=%x pid=%d\n",
+	pr_info("%s: blt_end=%d blt_addr=%x pid=%d\n",
 	__func__, dsi_pipe->blt_end, (int)dsi_pipe->blt_addr, current->pid);
 		mdp4_dsi_cmd_dma_busy_wait(mfd, dsi_pipe);
 		spin_lock_irqsave(&mdp_spin_lock, flag);
@@ -448,7 +443,7 @@ int mdp4_dsi_overlay_blt_stop(struct msm_fb_data_type *mfd)
 
 	if ((dsi_pipe->blt_end == 0) && dsi_pipe->blt_addr) {
 		mdp4_dsi_blt_dmap_busy_wait(dsi_mfd);
-		PR_DISP_INFO("%s: blt_end=%d blt_addr=%x pid=%d\n",
+		pr_info("%s: blt_end=%d blt_addr=%x pid=%d\n",
 			__func__, dsi_pipe->blt_end, (int)dsi_pipe->blt_addr, current->pid);
 		spin_lock_irqsave(&mdp_spin_lock, flag);
 		dsi_pipe->blt_end = 1;	/* mark as end */
@@ -459,41 +454,35 @@ int mdp4_dsi_overlay_blt_stop(struct msm_fb_data_type *mfd)
 	return -EBUSY;
 }
 #endif
-#ifdef CONFIG_FB_MSM_OVERLAY_WRITEBACK
-int mdp4_dsi_overlay_blt_offset(struct msm_fb_data_type *mfd,
-					struct msmfb_overlay_blt *req)
-{
-	req->offset = writeback_offset;
-	req->width = dsi_pipe->src_width;
-	req->height = dsi_pipe->src_height;
-	req->bpp = dsi_pipe->bpp;
 
-	return sizeof(*req);
-}
-
-void mdp4_dsi_overlay_blt(struct msm_fb_data_type *mfd,
-					struct msmfb_overlay_blt *req)
+void mdp4_dsi_overlay_blt(ulong addr)
 {
-	if (req->enable)
-		mdp4_dsi_overlay_blt_start(mfd);
-	else if (req->enable == 0)
-		mdp4_dsi_overlay_blt_stop(mfd);
-}
+#ifdef OVERLAY_BLT_EMBEDDED
+	pr_info("%s: Error, Embedded bBLT used\n", __func__);
+	return;
 #else
-int mdp4_dsi_overlay_blt_offset(struct msm_fb_data_type *mfd,
-					struct msmfb_overlay_blt *req)
-{
-	return 0;
-}
-int mdp4_dsi_overlay_blt_start(struct msm_fb_data_type *mfd)
-{
-	return -EBUSY;
-}
-int mdp4_dsi_overlay_blt_stop(struct msm_fb_data_type *mfd)
-{
-	return -EBUSY;
-}
+	unsigned long flag;
+
+	pr_info("%s: addr=%x\n", __func__, (int)addr);
+
+	if (addr) {
+		spin_lock_irqsave(&mdp_spin_lock, flag);
+		dsi_pipe->blt_cnt = 0;
+		dsi_pipe->blt_end = 0;
+		dsi_pipe->ov_cnt = 0;
+		dsi_pipe->dmap_cnt = 0;
+		dsi_pipe->blt_addr = addr;
+		spin_unlock_irqrestore(&mdp_spin_lock, flag);
+		mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
+	} else {
+		spin_lock_irqsave(&mdp_spin_lock, flag);
+		dsi_pipe->blt_end = 1;	/* mark as end */
+		spin_unlock_irqrestore(&mdp_spin_lock, flag);
+		mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
+	}
 #endif
+
+}
 
 void mdp4_blt_xy_update(struct mdp4_overlay_pipe *pipe)
 {
@@ -545,7 +534,7 @@ void mdp4_dma_p_done_dsi(struct mdp_dma_data *dma)
 	dsi_pipe->dmap_cnt++;
 	diff = dsi_pipe->ov_cnt - dsi_pipe->dmap_cnt;
 #ifdef BLTDEBUG
-	printk(KERN_INFO "%s: ov_cnt=%d dmap_cnt=%d\n", __func__, dsi_pipe->ov_cnt, dsi_pipe->dmap_cnt);
+	printk("%s: ov_cnt=%d dmap_cnt=%d\n", __func__, dsi_pipe->ov_cnt, dsi_pipe->dmap_cnt);
 #endif
 
 	if (diff <= 0) {
@@ -557,7 +546,7 @@ void mdp4_dma_p_done_dsi(struct mdp_dma_data *dma)
 			dsi_pipe->blt_addr = 0;
 			wmb();
 #ifdef BLTDEBUG
-			PR_DISP_INFO("%s(%d): END, ov_cnt=%d dmap_cnt=%d\n", __func__, __LINE__, dsi_pipe->ov_cnt, dsi_pipe->dmap_cnt);
+			pr_info("%s(%d): END, ov_cnt=%d dmap_cnt=%d\n", __func__, __LINE__, dsi_pipe->ov_cnt, dsi_pipe->dmap_cnt);
 #endif
 			mdp_intr_mask &= ~INTR_DMA_P_DONE;
 			outp32(MDP_INTR_ENABLE, mdp_intr_mask);
@@ -573,15 +562,16 @@ void mdp4_dma_p_done_dsi(struct mdp_dma_data *dma)
 	dma->busy_pid = __LINE__;
 	spin_unlock(&mdp_spin_lock);
 	complete(&dma->comp);
-	if (atomic_read(&busy_wait_cnt))
+	if (atomic_read(&busy_wait_cnt)) {
 		atomic_dec(&busy_wait_cnt);
+	}
 
 	mdp4_blt_xy_update(dsi_pipe);
 	mdp_enable_irq(MDP_DMA2_TERM);	/* enable intr */
 	spin_unlock(&mdp_done_lock);
 
 #ifdef BLTDEBUG
-	printk(KERN_INFO "%s: kickoff dmap\n", __func__);
+	printk("%s: kickoff dmap\n", __func__);
 #endif
 	/* kick off dmap */
 	outpdw(MDP_BASE + 0x000c, 0x0);
@@ -620,7 +610,7 @@ void mdp4_overlay0_done_dsi_cmd(struct mdp_dma_data *dma)
 	if (dsi_pipe->blt_end == 0)
 		dsi_pipe->ov_cnt++;
 #ifdef BLTDEBUG
-	printk(KERN_INFO "%s: ov_cnt=%d dmap_cnt=%d\n", __func__, dsi_pipe->ov_cnt, dsi_pipe->dmap_cnt);
+	printk("%s: ov_cnt=%d dmap_cnt=%d\n", __func__, dsi_pipe->ov_cnt, dsi_pipe->dmap_cnt);
 #endif
 	if (dsi_pipe->blt_cnt == 0) {
 		/* first kickoff since blt enabled */
@@ -631,7 +621,7 @@ void mdp4_overlay0_done_dsi_cmd(struct mdp_dma_data *dma)
 
 	diff = dsi_pipe->ov_cnt - dsi_pipe->dmap_cnt;
 	if (diff >= 2) {
-		PR_DISP_INFO("%s(%d) found diff > 2\n", __func__, __LINE__);
+		pr_info("%s(%d) found diff > 2\n", __func__, __LINE__);
 		spin_unlock(&mdp_spin_lock);
 		spin_unlock(&mdp_done_lock);
 		return;
@@ -640,7 +630,7 @@ void mdp4_overlay0_done_dsi_cmd(struct mdp_dma_data *dma)
 	dma->busy = FALSE;
 	dma->busy_pid = __LINE__;
 	dma->dmap_busy = TRUE;
-	dma->dmap_pid = (current->pid << 16)+__LINE__;
+	dma->dmap_pid = (current->pid <<16)+__LINE__;
 	complete(&dma->comp);
 			if (atomic_read(&busy_wait_cnt))
 				atomic_dec(&busy_wait_cnt);
@@ -652,7 +642,7 @@ void mdp4_overlay0_done_dsi_cmd(struct mdp_dma_data *dma)
 	wmb();	/* make sure registers updated */
 	spin_unlock(&mdp_done_lock);
 #ifdef BLTDEBUG
-	printk(KERN_INFO "%s: kickoff dmap\n", __func__);
+	printk("%s: kickoff dmap\n", __func__);
 #endif
 	/* kick off dmap */
 	outpdw(MDP_BASE + 0x000c, 0x0);
@@ -665,13 +655,13 @@ void mdp4_dsi_cmd_overlay_restore(void)
 {
 
 #ifdef OVDEBUG
-	printk(KERN_INFO "%s: start, pid=%d\n", __func__, current->pid);
+	printk("%s: start, pid=%d\n", __func__, current->pid);
 #endif
 	/* mutex holded by caller */
 	if (dsi_mfd && dsi_pipe) {
 		mdp4_dsi_cmd_dma_busy_wait(dsi_mfd, dsi_pipe);
 		mdp4_overlay_update_dsi_cmd(dsi_mfd);
-		/* FIXME: check blt_end flag is needed or not */
+		//FIXME: check blt_end flag is needed or not
 		if (dsi_pipe->blt_addr && dsi_pipe->blt_end == 0)
 			mdp4_dsi_blt_dmap_busy_wait(dsi_mfd);
 		mdp4_dsi_cmd_overlay_kickoff(dsi_mfd, dsi_pipe);
@@ -683,7 +673,7 @@ void mdp4_dsi_blt_dmap_busy_wait(struct msm_fb_data_type *mfd)
 	unsigned long flag;
 	int need_wait = 0;
 #ifdef BLTDEBUG
-	printk(KERN_INFO "%s: start pid=%d\n", __func__, current->pid);
+	printk("%s: start pid=%d\n", __func__, current->pid);
 #endif
 	spin_lock_irqsave(&mdp_spin_lock, flag);
 	if (mfd->dma->dmap_busy == TRUE) {
@@ -695,12 +685,12 @@ void mdp4_dsi_blt_dmap_busy_wait(struct msm_fb_data_type *mfd)
 	if (need_wait) {
 		/* wait until DMA finishes the current job */
 #ifdef BLTDEBUG
-	printk(KERN_INFO "%s: pending pid=%d\n", __func__, current->pid);
+	printk("%s: pending pid=%d\n", __func__, current->pid);
 #endif
 		wait_for_completion(&mfd->dma->dmap_comp);
 	}
 #ifdef BLTDEBUG
-	printk(KERN_INFO "%s: done pid=%d\n", __func__, current->pid);
+	printk("%s: done pid=%d\n", __func__, current->pid);
 #endif
 }
 
@@ -716,14 +706,14 @@ void mdp4_dsi_cmd_dma_busy_wait(struct msm_fb_data_type *mfd,
 		return;
 
 #ifdef OVDEBUG
-	printk(KERN_INFO "%s: start pid=%d\n", __func__, current->pid);
+	printk("%s: start pid=%d\n", __func__, current->pid);
 #endif
 	spin_lock_irqsave(&mdp_spin_lock, flag);
 	if (mfd->dma->busy == TRUE) {
 		if (!atomic_read(&busy_wait_cnt))
 			INIT_COMPLETION(mfd->dma->comp);
 		else
-			PR_DISP_INFO("%s(%d)Re-entry dma busy wait, cnt:%d\n", __func__, __LINE__, atomic_read(&busy_wait_cnt));
+			pr_info("%s(%d)Re-entry dma busy wait, cnt:%d\n", __func__, __LINE__, atomic_read(&busy_wait_cnt));
 		need_wait = true;
 		atomic_inc(&busy_wait_cnt);
 	}
@@ -737,15 +727,19 @@ void mdp4_dsi_cmd_dma_busy_wait(struct msm_fb_data_type *mfd,
 		while (!timeout) {
 			rmb();
 			if (mfd->dma->busy == FALSE) {
-				PR_DISP_INFO("%s(%d)timeout but dma not busy now, cnt:%d\n", __func__, __LINE__, atomic_read(&busy_wait_cnt));
+				pr_info("%s(%d)timeout but dma not busy now, cnt:%d\n", __func__, __LINE__, atomic_read(&busy_wait_cnt));
 				atomic_dec(&busy_wait_cnt);
 				break;
 			} else {
 				if (log_count++ < 100) {
-					PR_DISP_INFO("%s(%d)timeout but dma still busy\n", __func__, __LINE__);
-					PR_DISP_INFO("###busy_wait_cnt:%d blt_end:%d blt_cnt:%d ov_cnt:%d dmap_cnt:%d blt_addr:%lu\n",
+					pr_info("%s(%d)timeout but dma still busy\n", __func__, __LINE__);
+					pr_info("###busy_wait_cnt:%d blt_end:%d blt_cnt:%d ov_cnt:%d dmap_cnt:%d blt_addr:%lu\n",
 						atomic_read(&busy_wait_cnt), dsi_pipe->blt_end, dsi_pipe->blt_cnt, dsi_pipe->ov_cnt,
 						dsi_pipe->dmap_cnt, dsi_pipe->blt_addr);
+					pr_info("MDP_DISPLAY_STATUS:%x\n", inpdw(msm_mdp_base + 0x18));
+					pr_info("MDP_INTR_STATUS:%x\n", inpdw(MDP_INTR_STATUS));
+					pr_info("MDP_INTR_ENABLE:%x\n", inpdw(MDP_INTR_ENABLE));
+					pr_info("MDP_OVERLAY_STATUS:%x\n", inpdw(msm_mdp_base + 0x10000));
 				}
 				INIT_COMPLETION(mfd->dma->comp);
 				timeout = wait_for_completion_timeout(&mfd->dma->comp, HZ/5);
@@ -756,13 +750,13 @@ void mdp4_dsi_cmd_dma_busy_wait(struct msm_fb_data_type *mfd,
 #endif
 
 #ifdef OVDEBUG
-		printk(KERN_INFO "%s: pending pid=%d\n", __func__, current->pid);
+		printk("%s: pending pid=%d\n", __func__, current->pid);
 #endif
 		/* wait until DMA finishes the current job */
 		mfd->dma_update_flag = 0;
 	}
 #ifdef OVDEBUG
-	printk(KERN_INFO "%s: done pid=%d\n", __func__, current->pid);
+	printk("%s: done pid=%d\n", __func__, current->pid);
 #endif
 }
 
@@ -770,7 +764,7 @@ void mdp4_dsi_cmd_kickoff_video(struct msm_fb_data_type *mfd,
 				struct mdp4_overlay_pipe *pipe)
 {
 #ifdef OVDEBUG
-	printk(KERN_INFO "%s: pid=%d\n", __func__, current->pid);
+	printk("%s: pid=%d\n", __func__, current->pid);
 #endif
 
 	if (dsi_pipe->blt_addr && dsi_pipe->blt_cnt == 0)
@@ -785,7 +779,7 @@ void mdp4_dsi_cmd_kickoff_ui(struct msm_fb_data_type *mfd,
 				struct mdp4_overlay_pipe *pipe)
 {
 #ifdef OVDEBUG
-	printk(KERN_INFO "%s: pid=%d\n", __func__, current->pid);
+	printk("%s: pid=%d\n", __func__, current->pid);
 #endif
 	mdp4_dsi_cmd_overlay_kickoff(mfd, pipe);
 }
@@ -802,7 +796,7 @@ void mdp4_dsi_cmd_overlay_kickoff(struct msm_fb_data_type *mfd,
 	mfd->dma->busy_pid = (current->pid << 16)+__LINE__;
 	if (dsi_pipe->blt_addr) {
 		mfd->dma->dmap_busy = TRUE;
-		mfd->dma->dmap_pid = (current->pid << 16)+__LINE__;
+		mfd->dma->dmap_pid = (current->pid <<16)+__LINE__;
 	}
 	wmb();	/* make sure all registers updated */
 	spin_unlock_irqrestore(&mdp_spin_lock, flag);
@@ -810,7 +804,7 @@ void mdp4_dsi_cmd_overlay_kickoff(struct msm_fb_data_type *mfd,
 	mdp_pipe_kickoff(MDP_OVERLAY0_TERM, mfd);
 	wmb();
 
-	if (pipe->blt_addr == 0) {
+	if(pipe->blt_addr == 0) {
 		/* trigger dsi cmd engine */
 		mipi_dsi_cmd_mdp_sw_trigger();
 	}
@@ -819,18 +813,15 @@ void mdp4_dsi_cmd_overlay_kickoff(struct msm_fb_data_type *mfd,
 
 void mdp4_dsi_cmd_overlay(struct msm_fb_data_type *mfd)
 {
-	if (atomic_read(&ov_unset)) {
-		PR_DISP_INFO("%s(%d)found ov unset is called, skip frame update\n", __func__, __LINE__);
+	if(atomic_read(&ov_unset)) {
+		pr_info("%s(%d)found ov unset is called, skip frame update\n", __func__, __LINE__);
 		return;
 	}
-	if (dsi_pipe && dsi_pipe->is_3d) {
+	if(dsi_pipe && dsi_pipe->is_3d) {
 		atomic_set(&ov_play, 1);
-		if (mfd && mfd->enable_uipadding == PADDING_ENABLE)
+		if(mfd && mfd->enable_uipadding == PADDING_ENABLE)
 			mdp4_overlay_handle_padding(mfd, true);
 	}
-
-	if (mfd->esd_fixup)
-		mfd->esd_fixup((uint32_t)mfd);
 
 	mutex_lock(&mfd->dma->ov_mutex);
 
@@ -841,6 +832,11 @@ void mdp4_dsi_cmd_overlay(struct msm_fb_data_type *mfd)
 		mdp4_dsi_blt_dmap_busy_wait(mfd);
 	mdp4_overlay_update_dsi_cmd(mfd);
 
+	if (mfd->esd_fixup) {
+		mutex_unlock(&mfd->dma->ov_mutex);
+		mfd->esd_fixup((uint32_t)mfd);
+		mutex_lock(&mfd->dma->ov_mutex);
+	}
 
 	mdp4_dsi_cmd_kickoff_ui(mfd, dsi_pipe);
 	mdp4_stat.kickoff_dsi++;
@@ -855,10 +851,10 @@ void mdp4_dsi_cmd_overlay(struct msm_fb_data_type *mfd)
 	mdp4_overlay_resource_release();
 	mutex_unlock(&mfd->dma->ov_mutex);
 
-	if (dsi_pipe && dsi_pipe->is_3d) {
+	if(dsi_pipe && dsi_pipe->is_3d) {
 		atomic_set(&ov_play, 0);
-		if (atomic_read(&ov_unset)) {
-			PR_DISP_INFO("%s(%d) ov play finished completion ov_comp\n", __func__, __LINE__);
+		if(atomic_read(&ov_unset)) {
+			pr_info("%s(%d) ov play finished completion ov_comp\n", __func__, __LINE__);
 			complete(&ov_comp);
 		}
 	}

@@ -19,7 +19,6 @@
 #include "msm_fb.h"
 #include "mipi_dsi.h"
 #include "mipi_orise.h"
-#include <mach/debug_display.h>
 
 static struct msm_panel_info pinfo;
 
@@ -27,8 +26,8 @@ static struct mipi_dsi_phy_ctrl dsi_cmd_mode_phy_db = {
 /* DSI_BIT_CLK at 482MHz, 2 lane, RGB888 */
 		{0x03, 0x01, 0x01, 0x00},	/* regulator */
 		/* timing   */
-		/* {0x96, 0x26, 0x23, 0x0, 0x50, 0x4B, 0x1e, */
-		/* 0x28, 0x28, 0x03, 0x04}, */
+		//{0x96, 0x26, 0x23, 0x0, 0x50, 0x4B, 0x1e,
+		//0x28, 0x28, 0x03, 0x04},
 		{0x96, 0x1E, 0x1E, 0x00, 0x3C, 0x3C, 0x1E, 0x28,
 		0x0b, 0x13, 0x04},
 		{0x7f, 0x00, 0x00, 0x00},	/* phy ctrl */
@@ -46,7 +45,7 @@ static int __init mipi_cmd_orise_blue_qhd_pt_init(void)
 #ifdef CONFIG_FB_MSM_MIPI_PANEL_DETECT
 	if (msm_fb_detect_client("mipi_cmd_orise_qhd"))
 		return 0;
-	PR_DISP_INFO("panel: mipi_cmd_orise_qhd\n");
+	pr_info("panel: mipi_cmd_orise_qhd\n");
 #endif
 
 	pinfo.xres = 540;
@@ -97,7 +96,7 @@ static int __init mipi_cmd_orise_blue_qhd_pt_init(void)
 	ret = mipi_orise_device_register(&pinfo, MIPI_DSI_PRIM,
 						MIPI_DSI_PANEL_WVGA_PT);
 	if (ret)
-		PR_DISP_ERR("%s: failed to register device!\n", __func__);
+		pr_err("%s: failed to register device!\n", __func__);
 
 	return ret;
 }

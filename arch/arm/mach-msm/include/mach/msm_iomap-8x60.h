@@ -378,8 +378,4 @@
 
 #endif
 
-#ifdef CONFIG_BUILD_CIQ
-#define SMD_CIQ_BASE		0xF00D4
-#endif
-
 #endif

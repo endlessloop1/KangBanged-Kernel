@@ -194,7 +194,7 @@ void *msm_gemini_core_framedone_irq(int gemini_irq_status, void *context)
 {
 	struct msm_gemini_hw_buf *buf_p;
 
-	GMN_DBG("%s:%d]\n", __func__, __LINE__);
+	pr_info("[CAM] %s:%d]\n", __func__, __LINE__);
 
 	buf_p = msm_gemini_hw_pingpong_active_buffer(&we_pingpong_buf);
 	if (buf_p) {

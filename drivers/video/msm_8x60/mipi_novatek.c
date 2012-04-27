@@ -16,28 +16,29 @@
  *
  */
 #include <mach/panel_id.h>
-/* #include <mach/htc_battery_common.h> */
+#include <mach/htc_battery_common.h>
 #include "msm_fb.h"
 #include "mipi_dsi.h"
 #include "mipi_novatek.h"
-#include <mach/debug_display.h>
 
-/* -----------------------------------------------------------------------------
- *                             Constant value define
- * -----------------------------------------------------------------------------
- */
-
+//#define HTC_USED_0_3_MIPI_INIT
+#if defined(CONFIG_MACH_SHOOTER_U) || defined(CONFIG_MACH_SHOOTER) || defined(CONFIG_MACH_RIDER)
+#define MIPI_READ_DISPLAY_ID	1
+#endif
+// -----------------------------------------------------------------------------
+//                             Constant value define
+// -----------------------------------------------------------------------------
 #ifndef HTC_USED_0_3_MIPI_INIT
 const char NOVATEK_SONY_C3_MIPI_INIT[] = {
 	3,
 	DTYPE_DCS_WRITE, 0x11, 0x00,
 
-	1, 120, /* Wait time... */
+	1, 120, // Wait time...
 
 	3,
 	DTYPE_DCS_WRITE, 0x29, 0x00,
 
-	1, 40, /* Wait time... */
+	1, 40, // Wait time...
 
 	3,
 	DTYPE_DCS_WRITE1, 0x51, 0x00,
@@ -86,16 +87,27 @@ static struct dsi_cmd_desc NOVATEK_SONY_MIPI_INIT[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0x2C, 0x00} },
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0x35, 0x00} },
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0, 3, (char[]){0x44, 0x02, 0xCF} },
+//	{DTYPE_DCS_WRITE, 1, 0, 0, 40, 2, (char[]){0x28, 0x00} },
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0x51, 0x00} },
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0x55, 0x00} },
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0x5E, 0x00} },
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0x53, 0x24} },
 };
-#endif /* HTC_USED_0_3_MIPI_INIT */
+#endif //HTC_USED_0_3_MIPI_INIT
 
 
-/* -----------------------------------------------------------------------------
- *                         External routine declaration
- * -----------------------------------------------------------------------------
- */
-
+// -----------------------------------------------------------------------------
+//                         External routine declaration
+// -----------------------------------------------------------------------------
+extern int mipi_status;
 #define DEFAULT_BRIGHTNESS 83
+extern int bl_level_prevset;
+extern struct mutex cmdlock;
+extern struct dsi_cmd_desc *mipi_power_on_cmd;
+extern struct dsi_cmd_desc *mipi_power_off_cmd;
+extern int mipi_power_on_cmd_size;
+extern int mipi_power_off_cmd_size;
+extern char ptype[60];
 
 static struct msm_panel_common_pdata *mipi_novatek_pdata;
 
@@ -104,23 +116,24 @@ static struct dsi_buf novatek_rx_buf;
 
 
 /* novatek blue panel */
-static char led_pwm1[] =
+// &*&*&*PM
+static char led_pwm1[] = 
 {
 	0x51, 0x0,
 };
 
-static char led_pwm2[] =
+static char led_pwm2[] = 
 {
 	0x53, 0x24,
 };
 
-static char led_pwm3[] =
+static char led_pwm3[] = 
 {
 	0x55, 0x00,
 };
-static unsigned char bkl_enable_cmds[] = {0x53, 0x24};/* DTYPE_DCS_WRITE1 */ /* bkl on and no dim */
-static unsigned char bkl_enable_dimming_cmds[] = {0x53, 0x2c};/* DTYPE_DCS_WRITE1 */ /* bkl on and dim */
-static unsigned char bkl_disable_cmds[] = {0x53, 0x00};/* DTYPE_DCS_WRITE1 */ /* bkl off */
+// &*&*&*PM
+static unsigned char bkl_enable_cmds[] = {0x53, 0x24};/* DTYPE_DCS_WRITE1 *///bkl on and no dim
+static unsigned char bkl_disable_cmds[] = {0x53, 0x00};/* DTYPE_DCS_WRITE1 *///bkl off
 
 #ifdef NOVETAK_COMMANDS_UNUSED
 static char display_config_cmd_mode1[] = {
@@ -200,13 +213,22 @@ static char display_off[2] = {0x28, 0x00}; /* DTYPE_DCS_WRITE */
 static char display_on[2] = {0x29, 0x00}; /* DTYPE_DCS_WRITE */
 static char enable_te[2] = {0x35, 0x00};/* DTYPE_DCS_WRITE1 */
 static char test_reg[3] = {0x44, 0x02, 0xCF};/* DTYPE_DCS_LWRITE */
-static char test_reg_qhd[3] = {0x44, 0x01, 0x3f};/* DTYPE_DCS_LWRITE */ /* 479:1b7; 319:13f; 479:1df */
+static char test_reg_qhd[3] = {0x44, 0x01, 0x3f};/* DTYPE_DCS_LWRITE */ //479:1b7; 319:13f; 479:1df
 static char test_reg_ruy_shp[3] = {0x44, 0x01, 0x68};/* DTYPE_DCS_LWRITE */
 static char test_reg_ruy_auo[3] = {0x44, 0x01, 0x68};/* DTYPE_DCS_LWRITE */
 
+//static char pixel_off[2] = {0x22, 0x00}; /* DTYPE_DCS_WRITE */
+//static char normal_on[2] = {0x13, 0x00}; /* DTYPE_DCS_WRITE */
+//static char set_onelane[2] = {0xae, 0x01}; /* DTYPE_DCS_WRITE1 */
 static char set_twolane[2] = {0xae, 0x03}; /* DTYPE_DCS_WRITE1 */
 static char rgb_888[2] = {0x3A, 0x77}; /* DTYPE_DCS_WRITE1 */
 /* commands by Novatke */
+static char novatek_fd[2] = {0xfd, 0x01}; /* DTYPE_DCS_WRITE */
+static char novatek_eq1200[4] = {0x92, 0x00, 0xA2, 0x4C}; /* DTYPE_DCS_WRITE */
+static char novatek_2vci[2] = {0x03, 0x33}; /* DTYPE_DCS_WRITE */
+static char novatek_f3[2] = {0xF3, 0xAA }; /* DTYPE_DCS_WRITE1 */
+static char novatek_ff_aa[2] = {0xff, 0xAA }; /* DTYPE_DCS_WRITE1 */
+
 static char novatek_f4[2] = {0xf4, 0x55}; /* DTYPE_DCS_WRITE1 */
 static char novatek_8c[16] = { /* DTYPE_DCS_LWRITE */
 	0x8C, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -229,6 +251,7 @@ static char novatek_pwm_cp[2] = {0x09, 0x34 }; /* DTYPE_DCS_WRITE1 */
 static char novatek_pwm_cp2[2] = {0xc9, 0x01 }; /* DTYPE_DCS_WRITE1 */
 static char novatek_pwm_cp3[2] = {0xff, 0xaa }; /* DTYPE_DCS_WRITE1 */
 
+//static char novatek_5e[2] = {0x5E, 0x00}; /* DTYPE_DCS_WRITE1 */
 static char maucctr_0[6] = {0xF0, 0x55, 0xAA, 0x52, 0x08, 0x00};/* DTYPE_DCS_LWRITE */
 static char maucctr_1[6] = {0xF0, 0x55, 0xAA, 0x52, 0x08, 0x01}; /* DTYPE_DCS_LWRITE */
 static char novatek_b5x[4] = {0xB5, 0x05, 0x05, 0x05}; /* DTYPE_DCS_LWRITE */
@@ -278,6 +301,7 @@ static char novatek_f8[39] = { /* DTYPE_DCS_LWRITE */
 	0x0F, 0x22, 0x22, 0x22, 0x22, 0x00, 0x00,
 	0x05, 0x05, 0x00, 0x34, 0x00, 0x04, 0x55,
 	0x00, 0x04, 0x11, 0x38};
+//static char maucctr_3[6] = {0xF0, 0x55, 0xAA, 0x52, 0x08, 0x00}; /* DTYPE_DCS_LWRITE */
 
 static char novatek_d2[2] = {0xD2, 0x00}; /* DTYPE_DCS_WRITE1 */
 static char novatek_d3[2] = {0xD3, 0x00}; /* DTYPE_DCS_WRITE1 */
@@ -285,12 +309,17 @@ static char novatek_d4[2] = {0xD4, 0x04}; /* DTYPE_DCS_WRITE1 */
 static char novatek_d5[2] = {0xD5, 0x11}; /* DTYPE_DCS_WRITE1 */
 static char novatek_dd[2] = {0xDD, 0x44}; /* DTYPE_DCS_WRITE1 */
 static char novatek_e1[3] = {0xE1, 0x00, 0xFF}; /* DTYPE_DCS_LWRITE */
+//static char maucctr_4[6] = {0xF0, 0x55, 0xAA, 0x52, 0x08, 0x00}; /* DTYPE_DCS_LWRITE */
 static char novatek_3a[2] = {0x3A, 0x77}; /* DTYPE_DCS_WRITE1 */
 static char novatek_36[2] = {0x36, 0x00}; /* DTYPE_DCS_WRITE1 */
 static char novatek_2a[5] = {0x2A, 0x00, 0x00, 0x01, 0xDF}; /* DTYPE_DCS_LWRITE */
 static char novatek_2b[5] = {0x2B, 0x00, 0x00, 0x03, 0x1F}; /* DTYPE_DCS_LWRITE */
 static char memory_start[2] = {0x2C, 0x00}; /* DTYPE_DCS_LWRITE */
-#endif /* HTC_USED_0_3_MIPI_INIT */
+//static char novatek_51[2] = {0x51, 0xFF}; /* DTYPE_DCS_WRITE1 */
+//static char novatek_55[2] = {0x55, 0x00}; /* DTYPE_DCS_WRITE1 */
+
+//static char novatek_53[2] = {0x53, 0x24}; /* DTYPE_DCS_WRITE1 */
+#endif //HTC_USED_0_3_MIPI_INIT
 #endif
 
 static struct dsi_cmd_desc novatek_video_on_cmds[] = {
@@ -311,7 +340,7 @@ static struct dsi_cmd_desc novatek_video_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 10,
 		sizeof(led_pwm2), led_pwm2},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 10,
-		sizeof(led_pwm3), led_pwm3},
+		sizeof(led_pwm3), led_pwm3},		
 };
 
 static struct dsi_cmd_desc novatek_wvga_c3_cmd_on_cmds[] = {
@@ -331,6 +360,16 @@ static struct dsi_cmd_desc novatek_wvga_c3_cmd_on_cmds[] = {
 		sizeof(enable_te), enable_te},
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
 		sizeof(test_reg), test_reg},
+//	{DTYPE_DCS_WRITE, 1, 0, 0, 0,
+//		sizeof(display_off), display_off},
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//		sizeof(led_pwm1), led_pwm1},
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//		sizeof(led_pwm3), led_pwm3},
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//		sizeof(novatek_5e), novatek_5e},
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//		sizeof(led_pwm2), led_pwm2},
 };
 
 #ifdef HTC_USED_0_3_MIPI_INIT
@@ -414,7 +453,7 @@ static struct dsi_cmd_desc novatek_wvga_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1,
 		sizeof(led_pwm2), led_pwm2},
 };
-#endif /* HTC_USED_0_3_MIPI_INIT */
+#endif //HTC_USED_0_3_MIPI_INIT
 
 /* Gamma for cut 1 */
 /* R+ */
@@ -908,117 +947,117 @@ static struct dsi_cmd_desc pyd_sharp_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE, 1, 0, 0, 10,
 		sizeof(sw_reset), sw_reset},
 
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 0},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 2},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 4},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 6},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 8},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 10},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 12},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 14},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 16},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 18},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 20},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 22},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 24},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 26},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 28},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 30},/* don't change this line */
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 32},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 34},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 36},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 38},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 40},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 42},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 44},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 46},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 48},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 50},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 52},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 54},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 56},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 58},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 60},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 62},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 64},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 66},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 68},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 70},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 72},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 74},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 76},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 78},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 80},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 82},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 84},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 86},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 88},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 90},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 92},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 94},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 96},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 98},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 100},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 102},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 104},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 106},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 108},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 110},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 112},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 114},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 116},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 118},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 120},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 122},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 124},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 126},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 128},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 130},/* don't change this line */
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 132},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 134},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 136},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 138},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 140},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 142},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 144},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 146},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 148},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 150},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 152},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 154},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 156},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 158},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 160},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 162},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 164},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 166},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 168},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 170},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 172},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 174},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 176},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 178},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 180},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 182},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 184},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 186},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 188},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 190},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 192},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 194},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 196},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 198},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 200},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 202},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 204},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 206},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 208},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 210},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 212},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 214},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 216},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 218},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm + 220},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +0},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +2},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +4},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +6},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +8},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +10},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +12},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +14},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +16},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +18},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +20},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +22},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +24},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +26},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +28},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +30},/* don't change this line */
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +32},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +34},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +36},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +38},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +40},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +42},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +44},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +46},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +48},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +50},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +52},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +54},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +56},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +58},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +60},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +62},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +64},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +66},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +68},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +70},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +72},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +74},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +76},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +78},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +80},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +82},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +84},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +86},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +88},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +90},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +92},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +94},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +96},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +98},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +100},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +102},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +104},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +106},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +108},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +110},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +112},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +114},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +116},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +118},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +120},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +122},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +124},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +126},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +128},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +130},/* don't change this line */
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +132},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +134},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +136},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +138},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +140},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +142},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +144},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +146},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +148},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +150},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +152},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +154},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +156},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +158},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +160},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +162},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +164},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +166},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +168},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +170},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +172},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +174},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +176},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +178},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +180},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +182},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +184},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +186},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +188},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +190},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +192},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +194},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +196},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +198},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +200},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +202},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +204},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +206},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +208},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +210},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +212},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +214},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +216},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +218},
+    {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_sharp_gm +220},
 
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120,
 		sizeof(exit_sleep), exit_sleep},
@@ -1046,6 +1085,8 @@ static struct dsi_cmd_desc pyd_sharp_cmd_on_cmds[] = {
 		sizeof(enable_te), enable_te},
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
 		sizeof(test_reg), test_reg},
+//	{DTYPE_DCS_WRITE, 1, 0, 0, 50,
+//		sizeof(display_off), display_off},
 	{DTYPE_MAX_PKTSIZE, 1, 0, 0, 0,
 		sizeof(max_pktsize), max_pktsize},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
@@ -1062,6 +1103,14 @@ static struct dsi_cmd_desc pyd_sharp_cmd_on_cmds[] = {
 		sizeof(set_height), set_height},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
 		sizeof(rgb_888), rgb_888},
+// &*&*&*PM		
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//		sizeof(led_pwm1), led_pwm1},
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//		sizeof(led_pwm2), led_pwm2},
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//		sizeof(led_pwm3), led_pwm3},
+// &*&*&*PM		
 };
 
 /* Gamma table of PYD, sharp panel */
@@ -1069,38 +1118,38 @@ static char pyd_auo_gm[] = {
 	/* into gamma page */
 	0xf3, 0xaa,
 	/* R positive */
-	0x24, 0X63, 0X25, 0X6B, 0X26, 0X78, 0X27, 0X7E, 0X28, 0X19, 0X29, 0X2E,
-	0x2A, 0X61, 0X2B, 0X61, 0X2D, 0X1b, 0X2F, 0X22, 0X30, 0X84, 0X31, 0X1B,
-	0x32, 0X4F, 0X33, 0X63, 0X34, 0X28, 0X35, 0XDF, 0X36, 0XC9, 0X37, 0X69,
+	0x24,0X63,0x25,0X6B,0x26,0X78,0x27,0X7E,0x28,0X19,0x29,0X2E,
+	0x2A,0X61,0x2B,0X61,0x2D,0X1b,0x2F,0X22,0x30,0X84,0x31,0X1B,
+	0x32,0X4F,0x33,0X63,0x34,0x28,0x35,0XDF,0x36,0XC9,0x37,0X69,
 	/* R negative */
-	0x38, 0X63, 0X39, 0X6B, 0X3A, 0X78, 0X3B, 0X7E, 0X3D, 0X19, 0X3F, 0X2E,
-	0x40, 0X61, 0X41, 0X61, 0X42, 0X1b, 0X43, 0X22, 0X44, 0X84, 0X45, 0X1B,
-	0x46, 0X4F, 0X47, 0X63, 0X48, 0XC7, 0X49, 0XDF, 0X4A, 0XC9, 0X4B, 0X69,
+	0x38,0X63,0x39,0X6B,0x3A,0X78,0x3B,0X7E,0x3D,0X19,0x3F,0X2E,
+	0x40,0X61,0x41,0X61,0x42,0X1b,0x43,0X22,0x44,0X84,0x45,0X1B,
+	0x46,0X4F,0x47,0X63,0x48,0XC7,0x49,0XDF,0x4A,0XC9,0x4B,0X69,
 	/* G positive */
-	0x4C, 0X45, 0X4D, 0X54, 0X4E, 0X64, 0X4F, 0X75, 0X50, 0X18, 0X51, 0X2E,
-	0x52, 0X62, 0X53, 0X61, 0X54, 0X1D, 0X55, 0X26, 0X56, 0X9D, 0X57, 0X10,
-	0x58, 0X39, 0X59, 0X55, 0X5A, 0XC3, 0X5B, 0XD7, 0X5C, 0XFF, 0X5D, 0X6B,
+	0x4C,0X45,0x4D,0X54,0x4E,0X64,0x4F,0X75,0x50,0X18,0x51,0X2E,
+	0x52,0X62,0x53,0X61,0x54,0X1D,0x55,0X26,0x56,0X9D,0x57,0X10,
+	0x58,0X39,0x59,0X55,0x5A,0XC3,0x5B,0XD7,0x5C,0XFF,0x5D,0X6B,
 	/* G negative */
-	0x5E, 0X45, 0X5F, 0X54, 0X60, 0X64, 0X61, 0X75, 0X62, 0X18, 0X63, 0X2E,
-	0x64, 0X62, 0X65, 0X61, 0X66, 0X1D, 0X67, 0X26, 0X68, 0X65, 0X69, 0X10,
-	0x6A, 0X39, 0X6B, 0X55, 0X6C, 0XC3, 0X6D, 0XD7, 0X6E, 0XFF, 0X6F, 0X6B,
+	0x5E,0X45,0x5F,0X54,0x60,0X64,0x61,0X75,0x62,0X18,0x63,0X2E,
+	0x64,0X62,0x65,0X61,0x66,0X1D,0x67,0X26,0x68,0x65,0x69,0X10,
+	0x6A,0X39,0x6B,0X55,0x6C,0XC3,0x6D,0XD7,0x6E,0XFF,0x6F,0X6B,
 	/* B positive */
-	0x70, 0X7D, 0X71, 0X82, 0X72, 0X89, 0X73, 0X97, 0X74, 0X19, 0X75, 0X2E,
-	0x76, 0X61, 0X77, 0X6E, 0X78, 0X1A, 0X79, 0X1E, 0X7A, 0X8E, 0X7B, 0X0C,
-	0x7C, 0X27, 0X7D, 0X58, 0X7E, 0XCF, 0X7F, 0XD9, 0X80, 0XFc, 0X81, 0X68,
+	0x70,0X7D,0x71,0X82,0x72,0X89,0x73,0X97,0x74,0X19,0x75,0X2E,
+	0x76,0X61,0x77,0X6E,0x78,0X1A,0x79,0X1E,0x7A,0X8E,0x7B,0X0C,
+	0x7C,0X27,0x7D,0X58,0x7E,0XCF,0x7F,0XD9,0x80,0XFc,0x81,0X68,
 	/* B negative */
-	0x82, 0X7D, 0X83, 0X82, 0X84, 0X89, 0X85, 0X97, 0X86, 0X19, 0X87, 0X2E,
-	0x88, 0X61, 0X89, 0X6E, 0X8A, 0X1A, 0X8B, 0X1E, 0X8C, 0X8E, 0X8D, 0X0C,
-	0x8E, 0X27, 0X8F, 0X58, 0X90, 0XCF, 0X91, 0XD9, 0X92, 0XFc, 0X93, 0X68,
+	0x82,0X7D,0x83,0X82,0x84,0X89,0x85,0X97,0x86,0X19,0x87,0X2E,
+	0x88,0X61,0x89,0X6E,0x8A,0X1A,0x8B,0X1E,0x8C,0X8E,0x8D,0X0C,
+	0x8E,0X27,0x8F,0X58,0x90,0XCF,0x91,0XD9,0x92,0XFc,0x93,0X68,
 	/* out of gamma page */
-	0xC9, 0x01,
+	0xC9,0x01,
 	0xff, 0xaa,
 };
 
 /* Gamma table of RIR, sharp panel */
 static char rir_shp_gm[] = {
        0xf3, 0xaa,
-       /* 2.5 gamma */
+       // 2.5 gamma
        /* R + */
        0x24, 0x00, 0x25, 0x03, 0x26, 0x0e, 0x27, 0x19, 0x28, 0x18, 0x29, 0x2c,
        0x2A, 0x5d, 0x2B, 0x18, 0x2D, 0x1f, 0x2F, 0x26, 0x30, 0x58, 0x31, 0x16,
@@ -1126,14 +1175,14 @@ static char rir_shp_gm[] = {
        0x88, 0x5a, 0x89, 0x47, 0x8A, 0x1d, 0x8B, 0x25, 0x8C, 0x7f, 0x8D, 0x1a,
        0x8E, 0x4c, 0x8F, 0x62, 0x90, 0x7a, 0x91, 0x90, 0x92, 0x9B, 0x93, 0x35,
 
-       /* 2.x gamma */
+       // 2.x gamma
 
        0xff, 0xaa,
 };
 
 static char rir_auo_gm[] = {
        0xf3, 0xaa,
-       /* 2.5 gamma */
+	// 2.5 gamma
        /* R + */
        0x24, 0x00, 0x25, 0x0C, 0x26, 0x27, 0x27, 0x39, 0x28, 0x1B, 0x29, 0x2E,
        0x2A, 0x5D, 0x2B, 0x43, 0x2D, 0x20, 0x2F, 0x28, 0x30, 0x80, 0x31, 0x0F,
@@ -1159,486 +1208,528 @@ static char rir_auo_gm[] = {
        0x88, 0x5F, 0x89, 0x71, 0x8A, 0x20, 0x8B, 0x28, 0x8C, 0x96, 0x8D, 0x0F,
        0x8E, 0x29, 0x8F, 0x46, 0x90, 0xB8, 0x91, 0xDE, 0x92, 0xEF, 0x93, 0x6B,
 
-       /* 2.x gamma */
+       // 2.x gamma
        0xC9, 0x01,
        0xff, 0xaa,
 };
 
 static struct dsi_cmd_desc pyd_auo_cmd_on_cmds[] = {
     {DTYPE_DCS_WRITE, 1, 0, 0, 10,
-		sizeof(sw_reset), sw_reset},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xf3, 0xaa} },
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA3, 0xFF} },
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA4, 0xFF} },
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA5, 0xFF} },
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA6, 0x01} },
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xFF, 0xAA} },
+            sizeof(sw_reset), sw_reset},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xf3, 0xaa}},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA3, 0xFF}},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA4, 0xFF}},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA5, 0xFF}},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA6, 0x01}},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xFF, 0xAA}},
 
 	/* Gamma table start */
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 0},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 2},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 4},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 6},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 8},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 10},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 12},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 14},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 16},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 18},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 20},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 22},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 24},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 26},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 28},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 30},/* don't change this line! */
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 32},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 34},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 36},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 38},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 40},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 42},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 44},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 46},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 48},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 50},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 52},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 54},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 56},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 58},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 60},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 62},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 64},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 66},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 68},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 70},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 72},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 74},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 76},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 78},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 80},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 82},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 84},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 86},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 88},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 90},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 92},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 94},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 96},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 98},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 100},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 102},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 104},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 106},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 108},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 110},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 112},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 114},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 116},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 118},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 120},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 122},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 124},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 126},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 128},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 130},/* don't change this line! */
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 132},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 134},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 136},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 138},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 140},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 142},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 144},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 146},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 148},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 150},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 152},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 154},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 156},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 158},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 160},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 162},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 164},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 166},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 168},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 170},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 172},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 174},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 176},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 178},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 180},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 182},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 184},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 186},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 188},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 190},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 192},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 194},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 196},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 198},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 200},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 202},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 204},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 206},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 208},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 210},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 212},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 214},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 216},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 218},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm + 220},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +0},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +2},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +4},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +6},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +8},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +10},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +12},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +14},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +16},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +18},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +20},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +22},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +24},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +26},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +28},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +30},/* don't change this line! */
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +32},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +34},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +36},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +38},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +40},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +42},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +44},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +46},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +48},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +50},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +52},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +54},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +56},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +58},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +60},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +62},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +64},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +66},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +68},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +70},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +72},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +74},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +76},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +78},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +80},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +82},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +84},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +86},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +88},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +90},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +92},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +94},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +96},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +98},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +100},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +102},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +104},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +106},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +108},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +110},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +112},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +114},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +116},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +118},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +120},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +122},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +124},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +126},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +128},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +130},/* don't change this line! */
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +132},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +134},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +136},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +138},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +140},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +142},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +144},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +146},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +148},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +150},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +152},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +154},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +156},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +158},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +160},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +162},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +164},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +166},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +168},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +170},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +172},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +174},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +176},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +178},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +180},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +182},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +184},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +186},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +188},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +190},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +192},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +194},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +196},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +198},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +200},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +202},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +204},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +206},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +208},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +210},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +212},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +214},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +216},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +218},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, pyd_auo_gm +220},
 	/* Gamma table end */
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120,
 			sizeof(exit_sleep), exit_sleep},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_f3), novatek_pwm_f3},
+            sizeof(novatek_pwm_f3), novatek_pwm_f3},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_00), novatek_pwm_00},
+            sizeof(novatek_pwm_00), novatek_pwm_00},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_21), novatek_pwm_21},
+            sizeof(novatek_pwm_21), novatek_pwm_21},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_22), novatek_pwm_22},
+            sizeof(novatek_pwm_22), novatek_pwm_22},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_7d), novatek_pwm_7d},
+            sizeof(novatek_pwm_7d), novatek_pwm_7d},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_7f), novatek_pwm_7f},
+            sizeof(novatek_pwm_7f), novatek_pwm_7f},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_f3), novatek_pwm_f3},
+            sizeof(novatek_pwm_f3), novatek_pwm_f3},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_cp), novatek_pwm_cp},
+            sizeof(novatek_pwm_cp), novatek_pwm_cp},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_cp2), novatek_pwm_cp2},
+            sizeof(novatek_pwm_cp2), novatek_pwm_cp2},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_cp3), novatek_pwm_cp3},
+            sizeof(novatek_pwm_cp3), novatek_pwm_cp3},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(enable_te), enable_te},
+            sizeof(enable_te), enable_te},
     {DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(test_reg_ruy_auo), test_reg_ruy_auo},
+            sizeof(test_reg_ruy_auo), test_reg_ruy_auo},
+//        {DTYPE_DCS_WRITE, 1, 0, 0, 50,
+//                sizeof(display_off), display_off},
     {DTYPE_MAX_PKTSIZE, 1, 0, 0, 0,
-		sizeof(max_pktsize), max_pktsize},
+            sizeof(max_pktsize), max_pktsize},
     {DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(set_width), set_width},
+            sizeof(set_width), set_width},
     {DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(set_height), set_height},
+            sizeof(set_height), set_height},
+//        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//                sizeof(led_pwm1), led_pwm1},
+//        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//                sizeof(led_pwm2), led_pwm2},
+//        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//                sizeof(led_pwm3), led_pwm3},
 };
 
 static struct dsi_cmd_desc shp_novatek_cmd_on_cmds[] = {
        {DTYPE_DCS_WRITE, 1, 0, 0, 10,
-		sizeof(sw_reset), sw_reset},
+               sizeof(sw_reset), sw_reset},
        {DTYPE_DCS_WRITE, 1, 0, 0, 150,
-		sizeof(exit_sleep), exit_sleep},
+               sizeof(exit_sleep), exit_sleep},
 
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm },
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 2},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 4},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 6},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 8},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 10},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 12},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 14},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 16},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 18},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 20},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 22},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 24},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 26},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 28},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 30},/* don't change this line! */
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 32},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 34},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 36},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 38},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 40},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 42},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 44},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 46},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 48},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 50},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 52},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 54},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 56},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 58},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 60},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 62},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 64},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 66},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 68},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 70},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 72},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 74},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 76},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 78},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 80},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 82},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 84},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 86},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 88},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 90},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 92},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 94},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 96},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 98},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 100},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 102},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 104},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 106},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 108},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 110},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 112},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 114},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 116},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 118},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 120},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 122},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 124},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 126},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 128},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 130},/* don't change this line! */
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 132},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 134},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 136},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 138},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 140},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 142},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 144},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 146},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 148},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 150},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 152},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 154},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 156},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 158},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 160},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 162},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 164},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 166},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 168},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 170},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 172},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 174},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 176},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 178},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 180},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 182},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 184},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 186},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 188},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 190},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 192},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 194},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 196},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 198},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 200},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 202},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 204},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 206},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 208},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 210},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 212},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 214},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm + 216},
-       {DTYPE_DCS_WRITE1, 1, 0, 0, 50, 2, rir_shp_gm + 218},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +2},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +4},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +6},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +8},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +10},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +12},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +14},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +16},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +18},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +20},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +22},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +24},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +26},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +28},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +30},/* don't change this line! */
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +32},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +34},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +36},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +38},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +40},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +42},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +44},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +46},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +48},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +50},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +52},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +54},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +56},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +58},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +60},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +62},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +64},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +66},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +68},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +70},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +72},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +74},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +76},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +78},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +80},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +82},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +84},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +86},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +88},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +90},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +92},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +94},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +96},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +98},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +100},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +102},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +104},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +106},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +108},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +110},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +112},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +114},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +116},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +118},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +120},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +122},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +124},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +126},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +128},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +130},/* don't change this line! */
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +132},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +134},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +136},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +138},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +140},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +142},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +144},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +146},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +148},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +150},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +152},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +154},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +156},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +158},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +160},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +162},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +164},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +166},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +168},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +170},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +172},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +174},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +176},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +178},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +180},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +182},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +184},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +186},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +188},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +190},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +192},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +194},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +196},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +198},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +200},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +202},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +204},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +206},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +208},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +210},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +212},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +214},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_shp_gm +216},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 50, 2, rir_shp_gm +218},
 
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_f3), novatek_pwm_f3},
+               sizeof(novatek_pwm_f3), novatek_pwm_f3},
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_00), novatek_pwm_00},
+               sizeof(novatek_pwm_00), novatek_pwm_00},
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_21), novatek_pwm_21},
+               sizeof(novatek_pwm_21), novatek_pwm_21},
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_22), novatek_pwm_22},
+               sizeof(novatek_pwm_22), novatek_pwm_22},
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_7d), novatek_pwm_7d},
+               sizeof(novatek_pwm_7d), novatek_pwm_7d},
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_7f), novatek_pwm_7f},
+               sizeof(novatek_pwm_7f), novatek_pwm_7f},
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_f3), novatek_pwm_f3},
+               sizeof(novatek_pwm_f3), novatek_pwm_f3},
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_cp), novatek_pwm_cp},
+               sizeof(novatek_pwm_cp), novatek_pwm_cp},
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_cp2), novatek_pwm_cp2},
+               sizeof(novatek_pwm_cp2), novatek_pwm_cp2},
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_pwm_cp3), novatek_pwm_cp3},
+               sizeof(novatek_pwm_cp3), novatek_pwm_cp3},
        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(enable_te), enable_te},
+               sizeof(enable_te), enable_te},
        {DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(test_reg_qhd), test_reg_qhd},
+               sizeof(test_reg_qhd), test_reg_qhd},
+//       {DTYPE_DCS_WRITE, 1, 0, 0, 50,
+//               sizeof(display_off), display_off},
        {DTYPE_MAX_PKTSIZE, 1, 0, 0, 0,
-		sizeof(max_pktsize), max_pktsize},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_f4), novatek_f4},
-	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(novatek_8c), novatek_8c},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(novatek_ff), novatek_ff},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(set_twolane), set_twolane},
-	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(set_width), set_width},
-	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-		sizeof(set_height), set_height},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(rgb_888), rgb_888},
+               sizeof(max_pktsize), max_pktsize},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+               sizeof(novatek_f4), novatek_f4},
+       {DTYPE_DCS_LWRITE, 1, 0, 0, 0,
+               sizeof(novatek_8c), novatek_8c},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+               sizeof(novatek_ff), novatek_ff},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+               sizeof(set_twolane), set_twolane},
+       {DTYPE_DCS_LWRITE, 1, 0, 0, 0,
+               sizeof(set_width), set_width},
+       {DTYPE_DCS_LWRITE, 1, 0, 0, 0,
+               sizeof(set_height), set_height},
+       {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+               sizeof(rgb_888), rgb_888},
+// &*&*&*PM
+//       {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//               sizeof(led_pwm1), led_pwm1},
+//       {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//               sizeof(led_pwm2), led_pwm2},
+//       {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//               sizeof(led_pwm3), led_pwm3},
+// &*&*&*PM
 };
 
 static struct dsi_cmd_desc auo_nov_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE, 1, 0, 0, 10, sizeof(sw_reset), sw_reset},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xf3, 0xaa} },
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA3, 0xFF} },
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA4, 0xFF} },
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA5, 0xFF} },
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA6, 0x01} },
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xFF, 0xAA} },
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xf3, 0xaa}},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA3, 0xFF}},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA4, 0xFF}},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA5, 0xFF}},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xA6, 0x01}},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xFF, 0xAA}},
 
 	/* Gamma table start */
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  0},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  2},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  4},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  6},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  8},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  10},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  12},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  14},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  16},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  18},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  20},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  22},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  24},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  26},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  28},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  30},/* don't change this line! */
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  32},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  34},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  36},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  38},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  40},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  42},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  44},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  46},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  48},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  50},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  52},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  54},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  56},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  58},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  60},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  62},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  64},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  66},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  68},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  70},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  72},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  74},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  76},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  78},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  80},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  82},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  84},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  86},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  88},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  90},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +  92},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 94},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 96},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 98},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 100},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 102},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 104},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 106},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 108},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 110},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 112},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 114},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 116},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 118},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 120},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 122},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 124},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 126},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 128},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 130},/* don't change this line! */
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 132},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 134},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 136},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 138},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 140},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 142},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 144},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 146},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 148},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 150},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 152},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 154},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 156},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 158},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 160},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 162},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 164},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 166},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 168},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 170},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 172},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 174},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 176},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 178},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 180},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 182},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 184},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 186},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 188},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 190},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 192},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 194},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 196},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 198},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 200},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 202},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 204},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 206},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 208},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 210},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 212},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 214},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 216},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 218},
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm + 220},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +0},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +2},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +4},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +6},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +8},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +10},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +12},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +14},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +16},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +18},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +20},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +22},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +24},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +26},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +28},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +30},/* don't change this line! */
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +32},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +34},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +36},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +38},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +40},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +42},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +44},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +46},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +48},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +50},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +52},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +54},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +56},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +58},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +60},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +62},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +64},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +66},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +68},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +70},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +72},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +74},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +76},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +78},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +80},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +82},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +84},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +86},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +88},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +90},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +92},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +94},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +96},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +98},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +100},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +102},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +104},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +106},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +108},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +110},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +112},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +114},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +116},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +118},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +120},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +122},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +124},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +126},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +128},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +130},/* don't change this line! */
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +132},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +134},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +136},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +138},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +140},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +142},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +144},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +146},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +148},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +150},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +152},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +154},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +156},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +158},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +160},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +162},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +164},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +166},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +168},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +170},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +172},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +174},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +176},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +178},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +180},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +182},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +184},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +186},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +188},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +190},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +192},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +194},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +196},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +198},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +200},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +202},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +204},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +206},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +208},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +210},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +212},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +214},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +216},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +218},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, rir_auo_gm +220},
 	/* Gamma table end */
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120,
 			sizeof(exit_sleep), exit_sleep},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(novatek_pwm_f3), novatek_pwm_f3},
+            sizeof(novatek_pwm_f3), novatek_pwm_f3},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(novatek_pwm_00), novatek_pwm_00},
+            sizeof(novatek_pwm_00), novatek_pwm_00},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(novatek_pwm_21), novatek_pwm_21},
+            sizeof(novatek_pwm_21), novatek_pwm_21},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(novatek_pwm_22), novatek_pwm_22},
+            sizeof(novatek_pwm_22), novatek_pwm_22},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(novatek_pwm_7d), novatek_pwm_7d},
+            sizeof(novatek_pwm_7d), novatek_pwm_7d},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(novatek_pwm_7f), novatek_pwm_7f},
+            sizeof(novatek_pwm_7f), novatek_pwm_7f},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(novatek_pwm_f3), novatek_pwm_f3},
+            sizeof(novatek_pwm_f3), novatek_pwm_f3},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(novatek_pwm_cp), novatek_pwm_cp},
+            sizeof(novatek_pwm_cp), novatek_pwm_cp},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(novatek_pwm_cp2), novatek_pwm_cp2},
+            sizeof(novatek_pwm_cp2), novatek_pwm_cp2},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(novatek_pwm_cp3), novatek_pwm_cp3},
+            sizeof(novatek_pwm_cp3), novatek_pwm_cp3},
     {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-	sizeof(enable_te), enable_te},
+            sizeof(enable_te), enable_te},
     {DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-	sizeof(test_reg), test_reg},
+            sizeof(test_reg), test_reg},
+//        {DTYPE_DCS_WRITE, 1, 0, 0, 50,
+//                sizeof(display_off), display_off},
     {DTYPE_MAX_PKTSIZE, 1, 0, 0, 0,
-	sizeof(max_pktsize), max_pktsize},
+            sizeof(max_pktsize), max_pktsize},
     {DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-	sizeof(set_width), set_width},
+            sizeof(set_width), set_width},
     {DTYPE_DCS_LWRITE, 1, 0, 0, 0,
-	sizeof(set_height), set_height},
+            sizeof(set_height), set_height},
+//        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//                sizeof(led_pwm1), led_pwm1},
+//        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//                sizeof(led_pwm2), led_pwm2},
+//        {DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//                sizeof(led_pwm3), led_pwm3},
 };
 
 static struct dsi_cmd_desc shr_sharp_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE, 1, 0, 0, 10,
 		sizeof(sw_reset), sw_reset},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+		sizeof(novatek_f4), novatek_f4},
+	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
+		sizeof(novatek_eq1200), novatek_eq1200},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+		sizeof(novatek_fd), novatek_fd},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+		sizeof(novatek_ff), novatek_ff},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+		sizeof(novatek_f3), novatek_f3},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+		sizeof(novatek_2vci), novatek_2vci},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+		sizeof(novatek_pwm_cp2), novatek_pwm_cp2},
+	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+		sizeof(novatek_ff_aa), novatek_ff_aa},
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120,
 		sizeof(exit_sleep), exit_sleep},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
@@ -1665,8 +1756,16 @@ static struct dsi_cmd_desc shr_sharp_cmd_on_cmds[] = {
 		sizeof(enable_te), enable_te},
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
 		sizeof(test_reg_qhd), test_reg_qhd},
+//	{DTYPE_DCS_WRITE, 1, 0, 0, 50,
+//		sizeof(display_off), display_off},
 	{DTYPE_MAX_PKTSIZE, 1, 0, 0, 0,
 		sizeof(max_pktsize), max_pktsize},
+	//{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+	//	sizeof(novatek_f4), novatek_f4},
+	//{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
+	//	sizeof(novatek_8c), novatek_8c},
+	//{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+	//	sizeof(novatek_ff), novatek_ff},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
 		sizeof(set_twolane), set_twolane},
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0,
@@ -1675,6 +1774,14 @@ static struct dsi_cmd_desc shr_sharp_cmd_on_cmds[] = {
 		sizeof(set_height), set_height},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
 		sizeof(rgb_888), rgb_888},
+// &*&*&*PM
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//		sizeof(led_pwm1), led_pwm1},
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//		sizeof(led_pwm2), led_pwm2},
+//	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
+//		sizeof(led_pwm3), led_pwm3},
+// &*&*&*PM
 };
 
 static struct dsi_cmd_desc novatek_display_off_cmds[] = {
@@ -1700,13 +1807,13 @@ int mipi_novatek_restart_vcounter(void)
 
 	/* DSI_COMMAND_MODE_DMA_CTRL */
 	dma_ctrl = MIPI_INP(MIPI_DSI_BASE + 0x38);
-	/* PR_DISP_INFO("%s+ dma_ctrl=0x%x\n", __func__, dma_ctrl); */
+	/* pr_info("%s+ dma_ctrl=0x%x\n", __func__, dma_ctrl); */
 	MIPI_OUTP(MIPI_DSI_BASE + 0x38, 0x10000000);
 	mipi_dsi_op_mode_config(DSI_CMD_MODE);
 	mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_restart_vcounter_cmd,
 			ARRAY_SIZE(novatek_restart_vcounter_cmd));
 	MIPI_OUTP(MIPI_DSI_BASE + 0x38, dma_ctrl);
-	/* PR_DISP_INFO("%s-\n", __func__); */
+	/* pr_info("%s-\n", __func__); */
 	return 0;
 }
 
@@ -1721,6 +1828,7 @@ uint32 mipi_novatek_read_scan_line(void)
 
 	/* DSI_COMMAND_MODE_DMA_CTRL */
 	dma_ctrl = MIPI_INP(MIPI_DSI_BASE + 0x38);
+	pr_debug("%s+ dma_ctrl=0x%x\n", __func__, dma_ctrl);
 	MIPI_OUTP(MIPI_DSI_BASE + 0x38, 0x10000000);
 	mipi_dsi_buf_init(&novatek_rx_buf);
 	mipi_dsi_buf_init(&novatek_rx_buf);
@@ -1734,12 +1842,12 @@ uint32 mipi_novatek_read_scan_line(void)
 		char *cp;
 
 		cp = (char *)novatek_rx_buf.data;
-		PR_DISP_INFO("rx-data: ");
+		pr_info("rx-data: ");
 		for (i = 0; i < novatek_rx_buf.len; i++, cp++)
-			PR_DISP_INFO("%x ", *cp);
-		PR_DISP_INFO("\n");
+			pr_info("%x ", *cp);
+		pr_info("\n");
 	}
-	PR_DISP_INFO("%s: read_scan_line=%x\n", __func__,
+	pr_info("%s: read_scan_line=%x\n", __func__,
 		(uint32 *)novatek_rx_buf.data);
 #endif
 	return *((uint32 *)novatek_rx_buf.data);
@@ -1770,15 +1878,15 @@ static uint32 mipi_novatek_manufacture_id(void)
 		char *cp;
 
 		cp = (char *)rp->data;
-		printk(KERN_INFO "rx-data: ");
+		printk("rx-data: ");
 		for (i = 0; i < rp->len; i++, cp++)
-			printk(KERN_INFO "%x ", *cp);
-		printk(KERN_INFO "\n");
+			printk("%x ", *cp);
+		printk("\n");
 	}
 
 	lp = (uint32 *)rp->data;
 
-	printk(KERN_INFO "%s: manu_id=%x", __func__, *lp);
+	printk("%s: manu_id=%x", __func__, *lp);
 
 	return *lp;
 }
@@ -1808,7 +1916,7 @@ static int find_gamma_value(uint8_t reg, int panel, uint8_t *value)
 	uint8_t *cmds;
 	int len_cmds;
 
-	switch (panel) {
+	switch(panel) {
 	case PANEL_ID_PYD_SHARP:
 		cmds = pyd_sharp_gm;
 		len_cmds = ARRAY_SIZE(gm_regs);
@@ -1820,8 +1928,8 @@ static int find_gamma_value(uint8_t reg, int panel, uint8_t *value)
 		break;
 	}
 
-	for (i = 2; i <= len_cmds * 2; i += 2)
-		if (reg == cmds[i]) {
+	for(i=2; i<=len_cmds*2; i+=2)
+		if(reg == cmds[i]) {
 			*value = cmds[i+1];
 			return 1;
 		}
@@ -1837,29 +1945,28 @@ static void invert_gamma_value(int panel)
 	uint8_t *cmds;
 	int len_cmds;
 
-	switch (panel) {
+	switch(panel) {
 	case PANEL_ID_PYD_SHARP:
 		cmds = pyd_sharp_gm;
 		len_cmds = ARRAY_SIZE(gm_regs);
-		for (i = 2; i <= len_cmds * 2; i += 2) {
-			if (0x34 == cmds[i] || 0x68 == cmds[i])
-				continue;
-			if (cmds[i+1] <= 0x4F)
-				cmds[i + 1] = 0x4F - cmds[i + 1];
+		for(i=2; i<=len_cmds*2; i+=2) {
+			if(0x34==cmds[i] || 0x68==cmds[i]) continue;
+			if(cmds[i+1]<=0x4F)
+				cmds[i+1] = 0x4F - cmds[i+1];
 		}
 		break;
 	case PANEL_ID_PYD_AUO_NT:
 		cmds = pyd_auo_gm;
 		len_cmds = ARRAY_SIZE(gm_regs);
-		for (i = 2; i <= len_cmds * 2; i += 2) {
-			if (cmds[i + 1] <= 0x4F)
-				cmds[i + 1] = 0x4F - cmds[i + 1];
-			else if (cmds[i + 1] <= 0x7F)
-				cmds[i + 1] = 0x7F - cmds[i + 1];
+		for(i=2; i<=len_cmds*2; i+=2) {
+			if(cmds[i+1]<=0x4F)
+				cmds[i+1] = 0x4F - cmds[i+1];				
+			else if(cmds[i+1]<=0x7F)
+				cmds[i+1] = 0x7F - cmds[i+1];
 		}
 		break;
 	default:
-		PR_DISP_INFO("warning: panel not supported so far\n");
+		pr_info("warning: panel not supported so far\n");
 		break;
 	}
 }
@@ -1871,7 +1978,7 @@ static void invert_gamma_value(int panel)
 /* currently only support Pyramid's sharp and AUO panels */
 static void mipi_novatek_lcd_setup(int panel)
 {
-	int i;
+	int i;	
 	int err_count;
 	uint8_t err_seen;
 #if (GAMMA_STRESS_TEST_LOOP > 1)
@@ -1882,54 +1989,57 @@ static void mipi_novatek_lcd_setup(int panel)
 
 	struct dsi_cmd_desc gen_read_cmd = {
 		DTYPE_DCS_READ, 1, 0, 1, 0, 2, gm_cmd};
-	struct dsi_cmd_desc in_gamma_cmd = {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xf3, 0xaa} };
-	struct dsi_cmd_desc out_gamma_cmd = {DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xff, 0xaa} };
+	struct dsi_cmd_desc in_gamma_cmd =
+		{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xf3, 0xaa}};
+	struct dsi_cmd_desc out_gamma_cmd =
+		{DTYPE_DCS_WRITE1, 1, 0, 0, 0, 2, (char[]){0xff, 0xaa}};
 #endif
 
-	for (i = 0, err_count = 0; i < GAMMA_STRESS_TEST_LOOP; i++, err_seen = 0) {
+	for(i = 0, err_count = 0; i < GAMMA_STRESS_TEST_LOOP; i++, err_seen = 0) {
 
 		mipi_dsi_cmds_tx(&novatek_tx_buf, mipi_power_on_cmd, mipi_power_on_cmd_size);
 
 		/* only support PYD's sharp and auo panel */
-		if (panel != PANEL_ID_PYD_SHARP && panel != PANEL_ID_PYD_AUO_NT)
-			continue;
+		if(panel != PANEL_ID_PYD_SHARP && panel != PANEL_ID_PYD_AUO_NT) continue;
 
 #if (GAMMA_STRESS_TEST_LOOP > 1)
 		/* not going to read back gamma value */
-		if (1 == GAMMA_STRESS_TEST_LOOP)
-			continue;
+		if(1 == GAMMA_STRESS_TEST_LOOP) continue;
 
 		mipi_dsi_cmd_bta_sw_trigger();
 		gm_regs[0] = 0x24;
 
-		tp = &novatek_tx_buf; rp = &novatek_rx_buf;
-		mipi_dsi_buf_init(rp); mipi_dsi_buf_init(tp);
+        tp = &novatek_tx_buf; rp = &novatek_rx_buf;
+        mipi_dsi_buf_init(rp); mipi_dsi_buf_init(tp);
 		mipi_dsi_cmds_tx(&novatek_tx_buf, &in_gamma_cmd, 1);
 
+//		pr_info("--start of loop %d\n", i);
 		for (j = 0; j < ARRAY_SIZE(gm_regs); j++) {
 			gm_cmd[0] = gm_regs[j];
-			mipi_dsi_cmds_rx(tp, rp, &gen_read_cmd, 3);
+        	mipi_dsi_cmds_rx(tp, rp, &gen_read_cmd, 3);
+//			pr_info("(%d)NOV-REG[%02x]=%02x\n", i, gm_regs[j],
+//				((char *)rp->data)[0]);
 
-			if (0 != find_gamma_value(gm_regs[j], panel, &gamma_value)) {
-				if (!(PANEL_ID_PYD_SHARP == panel && (0x34 == gm_regs[j] || 0x68 == gm_regs[j]))) {
-					if (((char *)rp->data)[0] != gamma_value) {
-						PR_DISP_INFO("(loop %d)(%02Xh): read(%02X), supposed(%02X)\n",
+			if(0 != find_gamma_value(gm_regs[j], panel, &gamma_value)) {
+				if(!(PANEL_ID_PYD_SHARP==panel && (0x34==gm_regs[j] || 0x68==gm_regs[j]))) {
+					if(((char *)rp->data)[0] != gamma_value) {
+						pr_info("(loop %d)(%02Xh): read(%02X), supposed(%02X)\n",
 							i, gm_regs[j], ((char *)rp->data)[0], gamma_value);
 						err_seen = 1;
 					}
 				}
 			} else
-				PR_DISP_ERR("%s: bad return value for reg %02X. Go check why.\n",
+				pr_err("%s: bad return value for reg %02X. Go check why.\n",
 					__func__, gm_regs[j]);
 		}
 
-		if (err_seen)
-			err_count++;
+		if(err_seen) err_count++;
+//		pr_info("--end of loop %d\n", i);
 
 		mipi_dsi_cmds_tx(&novatek_tx_buf, &out_gamma_cmd, 1);
 
 		/* won't invert the gamma table the loop runs for only once or odd times */
-		if (!(i == GAMMA_STRESS_TEST_LOOP - 1 && GAMMA_STRESS_TEST_LOOP / 2))
+		if(! (i==GAMMA_STRESS_TEST_LOOP-1 && GAMMA_STRESS_TEST_LOOP/2))
 			invert_gamma_value(panel);
 
 		gamma_value = 1;
@@ -1938,7 +2048,7 @@ static void mipi_novatek_lcd_setup(int panel)
 	}
 
 #if (GAMMA_STRESS_TEST_LOOP > 1)
-	PR_DISP_INFO("%s: stress test result -- %d/%d %s\n",
+	pr_info("%s: stress test result -- %d/%d %s\n",
 		__func__, err_count, GAMMA_STRESS_TEST_LOOP, err_count?" -> Something wrong!":"");
 #endif
 }
@@ -1959,60 +2069,109 @@ static struct dsi_cmd_desc novatek_bkl_enable_cmds[] = {
 		sizeof(bkl_enable_cmds), bkl_enable_cmds},
 };
 
-static struct dsi_cmd_desc novatek_bkl_enable_dimming_cmds[] = {
-	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
-		sizeof(bkl_enable_dimming_cmds), bkl_enable_dimming_cmds},
-};
-
 static struct dsi_cmd_desc novatek_bkl_disable_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0,
 		sizeof(bkl_disable_cmds), bkl_disable_cmds},
 };
 
-/* -----------------------------------------------------------------------------
- *                         Common Routine Implementation
- * -----------------------------------------------------------------------------
- */
-
-void mipi_novatek_panel_type_detect(void)
+// -----------------------------------------------------------------------------
+//                         Common Routine Implementation
+// -----------------------------------------------------------------------------
+#ifndef HTC_USED_0_3_MIPI_INIT
+/*
+static int mipi_sony_panel_power_on(const char *init_cmds, int size)
 {
+	const char *pCurrRawDataPos = init_cmds;
+	const char *pOrgRawDataPos = init_cmds;
+	struct dsi_cmd_desc dsi_cmd_item = {0};
+	char cPackageSize;
+
+	printk(KERN_ERR "init_cmds=0x%x size=%d\n", (unsigned int)init_cmds, size);
+	dsi_cmd_item.last = 1;
+	dsi_cmd_item.wait = 1;
+
+	while (*pCurrRawDataPos && pCurrRawDataPos < (pOrgRawDataPos + size)) {
+		// Get the current package size...
+		cPackageSize = *pCurrRawDataPos;
+		// Move to the package data start address...
+		pCurrRawDataPos++;
+		// Parse the package...
+		if( cPackageSize==1 ){
+			// Wait command...
+			hr_msleep(*pCurrRawDataPos);
+			// Move to next package...
+			pCurrRawDataPos += cPackageSize;
+		}else{
+			// Check the MIPI header was valid?
+			switch( *pCurrRawDataPos ){
+				case DTYPE_DCS_WRITE:
+				case DTYPE_DCS_WRITE1:
+				case DTYPE_DCS_READ:
+				case DTYPE_DCS_LWRITE:
+					dsi_cmd_item.dtype = *pCurrRawDataPos;
+					break;
+				default:
+					// Invalid package, check the raw data...
+					printk(KERN_ERR "%s: Can't find proper data type!\n", __func__);
+					return -EPERM;
+			}
+			// Set the package size and data location...
+			dsi_cmd_item.dlen = cPackageSize-1;
+			dsi_cmd_item.payload = (char*)(pCurrRawDataPos+1);
+			// Send out the MIPI package...
+			mipi_dsi_buf_init(&novatek_tx_buf);
+			mipi_dsi_cmd_dma_add(&novatek_tx_buf, &dsi_cmd_item);
+			mipi_dsi_cmd_dma_tx(&novatek_tx_buf);
+			if (dsi_cmd_item.wait)
+				hr_msleep(dsi_cmd_item.wait);
+			// Move to next package...
+			pCurrRawDataPos += cPackageSize;
+		}
+	}
+
+	return 0;
+}
+*/
+#endif //HTC_USED_0_3_MIPI_INIT
+
+void mipi_novatek_panel_type_detect(void) {
 	if (panel_type == PANEL_ID_PYD_SHARP) {
-		PR_DISP_INFO("%s: panel_type=PANEL_ID_PYD_SHARP\n", __func__);
+		pr_info("%s: panel_type=PANEL_ID_PYD_SHARP\n", __func__);
 		strcat(ptype, "PANEL_ID_PYD_SHARP");
 		mipi_power_on_cmd = pyd_sharp_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(pyd_sharp_cmd_on_cmds);
 		mipi_power_off_cmd = novatek_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(novatek_display_off_cmds);
 	} else if (panel_type == PANEL_ID_PYD_AUO_NT) {
-		PR_DISP_INFO("%s: panel_type=PANEL_ID_PYD_AUO_NT\n", __func__);
+		pr_info("%s: panel_type=PANEL_ID_PYD_AUO_NT\n", __func__);
 		strcat(ptype, "PANEL_ID_PYD_AUO_NT");
 		mipi_power_on_cmd = pyd_auo_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(pyd_auo_cmd_on_cmds);
 		mipi_power_off_cmd = novatek_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(novatek_display_off_cmds);
 	} else if (panel_type == PANEL_ID_RUY_SHARP_NT) {
-		PR_DISP_INFO("%s: panel_type=PANEL_ID_RUY_SHARP_NT\n", __func__);
+		pr_info("%s: panel_type=PANEL_ID_RUY_SHARP_NT\n", __func__);
 		strcat(ptype, "PANEL_ID_RUY_SHARP_NT");
 		mipi_power_on_cmd = ruy_shp_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(ruy_shp_cmd_on_cmds);
 		mipi_power_off_cmd = novatek_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(novatek_display_off_cmds);
 	} else if (panel_type == PANEL_ID_RUY_SHARP_NT_C2) {
-		PR_DISP_INFO("%s: panel_type=PANEL_ID_RUY_SHARP_NT_C2\n", __func__);
+		pr_info("%s: panel_type=PANEL_ID_RUY_SHARP_NT_C2\n", __func__);
 		strcat(ptype, "PANEL_ID_RUY_SHARP_NT_C2");
 		mipi_power_on_cmd = ruy_shp_c2_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(ruy_shp_c2_cmd_on_cmds);
 		mipi_power_off_cmd = novatek_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(novatek_display_off_cmds);
 	} else if (panel_type == PANEL_ID_RUY_SHARP_NT_C2O) {
-		PR_DISP_INFO("%s: panel_type=PANEL_ID_RUY_SHARP_NT_C2O\n", __func__);
+		pr_info("%s: panel_type=PANEL_ID_RUY_SHARP_NT_C2O\n", __func__);
 		strcat(ptype, "PANEL_ID_RUY_SHARP_NT_C2O");
 		mipi_power_on_cmd = ruy_shp_c2o_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(ruy_shp_c2o_cmd_on_cmds);
 		mipi_power_off_cmd = novatek_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(novatek_display_off_cmds);
 	} else if (panel_type == PANEL_ID_DOT_SONY) {
-		PR_DISP_INFO("%s: panel_type=PANEL_ID_DOT_SONY\n", __func__);
+		pr_info("%s: panel_type=PANEL_ID_DOT_SONY\n", __func__);
 		strcat(ptype, "PANEL_ID_DOT_SONY");
 		#ifdef HTC_USED_0_3_MIPI_INIT
 		mipi_power_on_cmd = novatek_wvga_cmd_on_cmds;
@@ -2020,32 +2179,40 @@ void mipi_novatek_panel_type_detect(void)
 		#else
 		mipi_power_on_cmd = NOVATEK_SONY_MIPI_INIT;
 		mipi_power_on_cmd_size = ARRAY_SIZE(NOVATEK_SONY_MIPI_INIT);
-		#endif /* HTC_USED_0_3_MIPI_INIT */
+		#endif //HTC_USED_0_3_MIPI_INIT
 		mipi_power_off_cmd = novatek_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(novatek_display_off_cmds);
 	} else if (panel_type == PANEL_ID_DOT_SONY_C3) {
-		PR_DISP_INFO("%s: panel_type=PANEL_ID_DOT_SONY_C3\n", __func__);
+		pr_info("%s: panel_type=PANEL_ID_DOT_SONY_C3\n", __func__);
 		strcat(ptype, "PANEL_ID_DOT_SONY_C3");
 		mipi_power_on_cmd = novatek_wvga_c3_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(novatek_wvga_c3_cmd_on_cmds);
 		mipi_power_off_cmd = novatek_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(novatek_display_off_cmds);
+
+		/* clean up ack_err_status. Sony C3 LCM sometimes fails to set
+		backlight. Novatek suggests to do a BTA and a read to clear
+		AwER, and set backlight cmd can work. Workaround solution. */
+#ifdef MIPI_READ_DISPLAY_ID /* mipi read command verify */
+		mipi_dsi_cmd_bta_sw_trigger();
+		mipi_novatek_manufacture_id();
+#endif
 	} else if (panel_type == PANEL_ID_RIR_SHARP_NT) {
-		PR_DISP_INFO("%s: panel_type=PANEL_ID_RIR_SHARP_NT\n", __func__);
+		pr_info("%s: panel_type=PANEL_ID_RIR_SHARP_NT\n", __func__);
 		strcat(ptype, "PANEL_ID_RIR_SHARP_NT");
 		mipi_power_on_cmd = shp_novatek_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(shp_novatek_cmd_on_cmds);
 		mipi_power_off_cmd = novatek_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(novatek_display_off_cmds);
 	} else if (panel_type == PANEL_ID_RIR_AUO_NT) {
-		PR_DISP_INFO("%s: panel_type=PANEL_ID_RIR_AUO_NT\n", __func__);
+		pr_info("%s: panel_type=PANEL_ID_RIR_AUO_NT\n", __func__);
 		strcat(ptype, "PANEL_ID_RIR_AUO_NT");
 		mipi_power_on_cmd = auo_nov_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(auo_nov_cmd_on_cmds);
 		mipi_power_off_cmd = novatek_display_off_cmds;
 		mipi_power_off_cmd_size = ARRAY_SIZE(novatek_display_off_cmds);
 	} else if (panel_type == PANEL_ID_SHR_SHARP_NT) {
-		PR_DISP_INFO("%s: panel_type=PANEL_ID_SHR_SHARP_NT\n", __func__);
+		pr_info("%s: panel_type=PANEL_ID_SHR_SHARP_NT\n", __func__);
 		strcat(ptype, "PANEL_ID_SHR_SHARP_NT");
 		mipi_power_on_cmd = shr_sharp_cmd_on_cmds;
 		mipi_power_on_cmd_size = ARRAY_SIZE(shr_sharp_cmd_on_cmds);
@@ -2075,7 +2242,7 @@ static int mipi_novatek_lcd_on(struct platform_device *pdev)
 	mipi  = &mfd->panel_info.mipi;
 	mutex_lock(&cmdlock);
 	if (init == 0) {
-		if (pdata && pdata->panel_type_detect)
+		if(pdata && pdata->panel_type_detect)
 			pdata->panel_type_detect();
 		init = 1;
 		goto end;
@@ -2085,7 +2252,7 @@ static int mipi_novatek_lcd_on(struct platform_device *pdev)
 				ARRAY_SIZE(novatek_video_on_cmds));
 		} else {
 			if (panel_type != PANEL_ID_NONE) {
-				PR_DISP_INFO("%s\n", ptype);
+				pr_info("%s\n", ptype);
 				mipi_novatek_lcd_setup(panel_type);
 #ifdef MIPI_READ_DISPLAY_ID /* mipi read command verify */
 				/* clean up ack_err_status */
@@ -2117,7 +2284,7 @@ static int mipi_novatek_lcd_off(struct platform_device *pdev)
 	mutex_lock(&cmdlock);
 
 	if (panel_type != PANEL_ID_NONE) {
-		PR_DISP_INFO("%s\n", ptype);
+		pr_info("%s\n", ptype);
 
 		/* For ESD fixup */
 		if (mfd->esd_fixup) {
@@ -2143,6 +2310,7 @@ static int mipi_dsi_set_backlight(struct msm_fb_data_type *mfd)
 	mutex_lock(&cmdlock);
 
 	mipi  = &mfd->panel_info.mipi;
+	pr_debug("%s+:bl=%d status=%d\n", __func__, mfd->bl_level, mipi_status);
 	if (mipi_status == 0)
 		goto end;
 	if (mipi_novatek_pdata && mipi_novatek_pdata->shrink_pwm)
@@ -2151,31 +2319,22 @@ static int mipi_dsi_set_backlight(struct msm_fb_data_type *mfd)
 		led_pwm1[1] = (unsigned char)(mfd->bl_level);
 
 	if (mfd->bl_level == 0 ||
-			board_mfg_mode() == 4/* ||
-			(board_mfg_mode() == 5 && !(htc_battery_get_zcharge_mode()%2))*/) {
+			board_mfg_mode() == 4 ||
+			(board_mfg_mode() == 5 && !(htc_battery_get_zcharge_mode()%2))) {
+		//mipi_dsi_op_mode_config(DSI_CMD_MODE);
+		//mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_bkl_disable_cmds,
+			//ARRAY_SIZE(novatek_bkl_disable_cmds));
 		led_pwm1[1] = 0;
 	}
 	if (mipi->mode == DSI_VIDEO_MODE) {
 		mipi_dsi_cmd_mode_ctrl(1);	/* enable cmd mode */
-                if (mfd->bl_level == 0)
-                        mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_bkl_enable_cmds,
-                                ARRAY_SIZE(novatek_bkl_enable_cmds));
 		mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_cmd_backlight_cmds,
 		ARRAY_SIZE(novatek_cmd_backlight_cmds));
-                if (bl_level_old == 0 && mfd->bl_level != 0)
-                        mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_bkl_enable_dimming_cmds,
-                                ARRAY_SIZE(novatek_bkl_enable_dimming_cmds));
 		mipi_dsi_cmd_mode_ctrl(0);	/* disable cmd mode */
 	} else {
 		mipi_dsi_op_mode_config(DSI_CMD_MODE);
-		if (mfd->bl_level == 0)
-			mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_bkl_enable_cmds,
-				ARRAY_SIZE(novatek_bkl_enable_cmds));
 		mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_cmd_backlight_cmds,
 		ARRAY_SIZE(novatek_cmd_backlight_cmds));
-		if (bl_level_old == 0 && mfd->bl_level != 0)
-			mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_bkl_enable_dimming_cmds,
-				ARRAY_SIZE(novatek_bkl_enable_dimming_cmds));
 	}
 	bl_level_prevset = bl_level_old = mfd->bl_level;
 end:
@@ -2188,13 +2347,14 @@ static void mipi_novatek_set_backlight(struct msm_fb_data_type *mfd)
 	int bl_level;
 
 	bl_level = mfd->bl_level;
+	pr_debug("%s+ bl_level=%d\n", __func__, mfd->bl_level);
 
-	mipi_dsi_set_backlight(mfd);
+		mipi_dsi_set_backlight(mfd);
 }
 
 static void mipi_novatek_display_on(struct msm_fb_data_type *mfd)
 {
-	PR_DISP_DEBUG("%s+\n", __func__);
+	pr_debug("%s+\n", __func__);
 	mutex_lock(&cmdlock);
 	mipi_dsi_op_mode_config(DSI_CMD_MODE);
 	mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_display_on_cmds,
@@ -2202,15 +2362,31 @@ static void mipi_novatek_display_on(struct msm_fb_data_type *mfd)
 	mutex_unlock(&cmdlock);
 }
 
+#if (defined(CONFIG_MACH_SHOOTER) || defined(CONFIG_MACH_SHOOTERU))
+static int mipi_novatek_send_cmds(struct dsi_cmd_desc *novatek_cmds, uint32_t size)
+{
+	pr_debug("%s+\n", __func__);
+	mutex_lock(&cmdlock);
+	if (mipi_status == 0)
+		goto end;
+	mipi_dsi_op_mode_config(DSI_CMD_MODE);
+	mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_cmds, size);
+end:
+	mutex_unlock(&cmdlock);
+	pr_debug("%s-\n", __func__);
+	return 0;
+}
+#endif
+
 static void mipi_novatek_bkl_switch(struct msm_fb_data_type *mfd, bool on)
 {
 	unsigned int val = 0;
 
-	if (on) {
+	if(on) {
 		mipi_status = 1;
 		val = mfd->bl_level;
-		if (val == 0) {
-			if (bl_level_prevset != 1) {
+		if(val == 0) {
+			if(bl_level_prevset != 1) {
 				val = bl_level_prevset;
 				mfd->bl_level = val;
 			} else {
@@ -2229,7 +2405,7 @@ static void mipi_novatek_bkl_switch(struct msm_fb_data_type *mfd, bool on)
 static void mipi_novatek_bkl_ctrl(bool on)
 {
 	mutex_lock(&cmdlock);
-	if (on) {
+	if(on) {
 		mipi_dsi_op_mode_config(DSI_CMD_MODE);
 		mipi_dsi_cmds_tx(&novatek_tx_buf, novatek_bkl_enable_cmds,
 			ARRAY_SIZE(novatek_bkl_enable_cmds));
@@ -2243,8 +2419,16 @@ static void mipi_novatek_bkl_ctrl(bool on)
 
 static int mipi_novatek_lcd_probe(struct platform_device *pdev)
 {
+#if (defined(CONFIG_MACH_SHOOTER) || defined(CONFIG_MACH_SHOOTERU))
+	struct msm_fb_data_type *mfd;
+	mfd = platform_get_drvdata(pdev);
+#endif
 	if (pdev->id == 0) {
 		mipi_novatek_pdata = pdev->dev.platform_data;
+#if (defined(CONFIG_MACH_SHOOTER) || defined(CONFIG_MACH_SHOOTERU))
+		if (mipi_novatek_pdata)
+			mipi_novatek_pdata->mipi_send_cmds = mipi_novatek_send_cmds;
+#endif
 		mutex_init(&cmdlock);
 		return 0;
 	}

@@ -95,9 +95,9 @@
 				msm_sdio_dmux_write
 	21: 2011-08-01 bert_lin Vigor SDIO_DMUX
 		revert commit
-	22: Viger only, has not phase in to HOY CRC line
+	22: Viger only, has not phase in to RUBY CRC line
 
-	23: Viger only, has not phase in to HOY CRC line
+	23: Viger only, has not phase in to RUBY CRC line
 
 	24: 2011-08-10 Mars Lin
 		1. Trigger ketnel penic when tx pending data

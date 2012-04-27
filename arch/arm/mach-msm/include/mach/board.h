@@ -187,12 +187,34 @@ struct msm_camera_sensor_flash_data {
 	struct msm_camera_sensor_flash_src *flash_src;
 };
 
+/* HTC start jason 20110811 */
+#define FL_STATE_NUM 10
+
+struct camera_led_est {
+  uint8_t enable;
+  uint32_t led_state;
+  uint32_t current_ma;
+  uint32_t lumen_value;
+  int32_t min_focus_step;
+  int32_t max_focus_step;
+};
+
+struct camera_flash_info {
+  uint16_t low_temp_limit;
+  uint16_t low_cap_limit;
+  uint32_t low_limit_led_state;
+  uint32_t max_led_current_ma;
+  struct camera_led_est led_est_table[FL_STATE_NUM];
+};
+/* HTC end */
+
 struct camera_flash_cfg {
 	int num_flash_levels;
 	int (*camera_flash)(int level);
 	uint16_t low_temp_limit;
 	uint16_t low_cap_limit;
 	uint8_t postpone_led_mode;
+	struct camera_flash_info *flash_info;	/* HTC jason 20110811 */
 };
 
 struct msm_camera_sensor_strobe_flash_data {
@@ -204,6 +226,12 @@ struct msm_camera_sensor_strobe_flash_data {
 	int state;
 	int flash_trigger;
 	int flash_charge_done;
+};
+
+enum msm_camera_platform{
+	MSM_CAMERA_PLTFORM_8X60	= 0,
+	MSM_CAMERA_PLTFORM_7X30	= 1,
+	MSM_CAMERA_PLTFORM_MAX	= 2,
 };
 
 struct msm_camera_sensor_info {
@@ -257,6 +285,7 @@ struct msm_camera_sensor_info {
 	int gpio_set_value_force; /*true: force to set gpio  */
 	int dev_node;
 	char *eeprom_data;	/* qs_s5k4e1 */
+	int camera_platform;
 };
 
 
@@ -332,6 +361,7 @@ struct msm_adspdec_database {
 	struct dec_instance_table *dec_instance_list;
 };
 
+struct dsi_cmd_desc;
 struct msm_panel_common_pdata {
 	uintptr_t hw_revision_addr;
 	int gpio;
@@ -357,6 +387,9 @@ struct msm_panel_common_pdata {
 	struct panel_dcr_info *dcr_panel_pinfo;
 	unsigned int auto_bkl_stat;
 	int (*bkl_enable)(int);
+#if defined(CONFIG_MACH_SHOOTER_U) || defined(CONFIG_MACH_SHOOTER)
+	int (*mipi_send_cmds)(struct dsi_cmd_desc *cmds, uint32_t len);
+#endif
 };
 
 struct lcdc_platform_data {
@@ -446,8 +479,6 @@ int __init msm_add_sdcc(unsigned int controller,
 void __init msm_clock_init(void);
 #endif
 
-void __init msm_acpu_clock_init(struct msm_acpu_clock_platform_data *);
-
 struct msm_usb_host_platform_data;
 int __init msm_add_host(unsigned int host,
 		struct msm_usb_host_platform_data *plat);
@@ -477,7 +508,6 @@ int __init rmt_storage_add_ramfs(void);
 
 void msm_hsusb_set_vbus_state(int online);
 enum usb_connect_type {
-	CONNECT_TYPE_CLEAR = -2,
 	CONNECT_TYPE_UNKNOWN = -1,
 	CONNECT_TYPE_NONE = 0,
 	CONNECT_TYPE_USB,
@@ -575,6 +605,4 @@ extern unsigned int msm_shared_ram_phys; /* defined in arch/arm/mach-msm/io.c */
 extern int emmc_partition_read_proc(char *page, char **start, off_t off,
 			   int count, int *eof, void *data);
 
-extern int processor_name_read_proc(char *page, char **start, off_t off,
-			   int count, int *eof, void *data);
 #endif

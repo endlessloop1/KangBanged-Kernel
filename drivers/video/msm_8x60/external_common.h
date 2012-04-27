@@ -36,7 +36,8 @@
 #define TVOUT_VFRMT_PAL_BDGHIN_720x576i		2
 #define TVOUT_VFRMT_PAL_M_720x480i		3
 #define TVOUT_VFRMT_PAL_N_720x480i		4
-#elif defined(CONFIG_FB_MSM_HDMI_COMMON)
+#endif
+#ifdef CONFIG_FB_MSM_HDMI_COMMON
 /* all video formats defined by EIA CEA 861D */
 #define HDMI_VFRMT_640x480p60_4_3	0
 #define HDMI_VFRMT_720x480p60_4_3	1
@@ -207,7 +208,6 @@ struct external_common_state_type {
 	struct kobject *uevent_kobj;
 	uint32 video_resolution;
 	struct device *dev;
-	bool vcdb_support;
 #ifdef CONFIG_FB_MSM_HDMI_3D
 	boolean format_3d;
 	void (*switch_3d)(boolean on);
@@ -255,11 +255,5 @@ void hdmi_common_init_panel_info(struct msm_panel_info *pinfo);
 
 int external_common_state_create(struct platform_device *pdev);
 void external_common_state_remove(void);
-#ifdef CONFIG_FB_MSM_HDMI_MHL_SII9234
-extern  uint8_t ReadHPD(void);
-extern void update_mhl_status(bool isMHL, enum usb_connect_type statMHL);
-extern bool IsD0Mode(void);
-extern void SetHDCPStatus(bool Status);
-extern bool  g_bEnterEarlySuspend;
-#endif
+
 #endif /* __EXTERNAL_COMMON_H__ */

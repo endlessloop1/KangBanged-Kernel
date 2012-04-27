@@ -239,7 +239,7 @@ int msm_gemini_framedone_irq(struct msm_gemini_device *pgmn_dev,
 {
 	int rc = 0;
 
-	GMN_DBG("%s:%d] Enter\n", __func__, __LINE__);
+	pr_info("[CAM] %s:%d] Enter\n", __func__, __LINE__);
 
 	if (buf_in) {
 		buf_in->vbuf.framedone_len = buf_in->framedone_len;
@@ -258,6 +258,8 @@ int msm_gemini_framedone_irq(struct msm_gemini_device *pgmn_dev,
 	if (buf_in)
 		rc = msm_gemini_q_wakeup(&pgmn_dev->evt_q);
 
+	pr_info("[CAM] %s:%d]\n", __func__, __LINE__);
+
 	return rc;
 }
 
@@ -267,10 +269,12 @@ int msm_gemini_evt_get(struct msm_gemini_device *pgmn_dev,
 	struct msm_gemini_core_buf *buf_p;
 	struct msm_gemini_ctrl_cmd ctrl_cmd;
 
-	GMN_DBG("%s:%d] Enter\n", __func__, __LINE__);
+	pr_info("[CAM] %s:%d] Enter\n", __func__, __LINE__);
 
 	msm_gemini_q_wait(&pgmn_dev->evt_q);
 	buf_p = msm_gemini_q_out(&pgmn_dev->evt_q);
+
+	pr_info("[CAM] %s after evt_q wait\n", __func__);
 
 	if (!buf_p) {
 		GMN_DBG("%s:%d] no buffer\n", __func__, __LINE__);
@@ -720,7 +724,7 @@ int msm_gemini_start(struct msm_gemini_device *pgmn_dev, void * __user arg)
 	struct msm_gemini_core_buf *buf_out_free[2] = {NULL, NULL};
 	int i, rc;
 
-	GMN_DBG("%s:%d] Enter\n", __func__, __LINE__);
+	pr_info("[CAM] %s:%d] Enter\n", __func__, __LINE__);
 
 	release_buf = 1;
 	for (i = 0; i < 2; i++) {
@@ -730,7 +734,7 @@ int msm_gemini_start(struct msm_gemini_device *pgmn_dev, void * __user arg)
 			msm_gemini_core_fe_buf_update(buf_out);
 			kfree(buf_out);
 		} else {
-			GMN_DBG("%s:%d] no input buffer\n", __func__, __LINE__);
+			pr_info("[CAM] %s:%d] no input buffer\n", __func__, __LINE__);
 			break;
 		}
 	}
@@ -749,7 +753,7 @@ int msm_gemini_start(struct msm_gemini_device *pgmn_dev, void * __user arg)
 			/* since ping and pong are same buf release only once*/
 			release_buf = 0;
 		} else {
-			GMN_DBG("%s:%d] no output buffer\n",
+			GMN_PR_ERR("%s:%d] no output buffer\n",
 			__func__, __LINE__);
 			break;
 		}
@@ -759,7 +763,7 @@ int msm_gemini_start(struct msm_gemini_device *pgmn_dev, void * __user arg)
 		kfree(buf_out_free[i]);
 
 	rc = msm_gemini_ioctl_hw_cmds(pgmn_dev, arg);
-	GMN_DBG("%s:%d]\n", __func__, __LINE__);
+	pr_info("[CAM] %s:%d]\n", __func__, __LINE__);
 	return rc;
 }
 

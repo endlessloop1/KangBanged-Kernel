@@ -56,6 +56,7 @@
 #include <mach/msm_serial_hs.h>
 
 #include "msm_serial_hs_hwreg.h"
+#include <linux/poison.h>
 
 /*
 #define SERIAL_DCPU_LOCK_SUPPORTED
@@ -316,7 +317,7 @@ unsigned int use_low_power_wakeup(struct msm_hs_port *msm_uport)
 static inline int is_gsbi_uart(struct msm_hs_port *msm_uport)
 {
 	/* assume gsbi uart if gsbi resource found in pdata */
-	return (msm_uport->mapped_gsbi != NULL);
+	return ((msm_uport->mapped_gsbi != NULL));
 }
 
 static inline unsigned int msm_hs_read(struct uart_port *uport,
@@ -344,6 +345,10 @@ static void msm_hs_release_port(struct uart_port *port)
 		gsbi_resource = platform_get_resource_byname(pdev,
 							     IORESOURCE_MEM,
 							     "gsbi_resource");
+		if (gsbi_resource == NULL) {
+			printk(KERN_ERR "Can't get GSBI RES\n");
+			return;
+		}
 		size = gsbi_resource->end - gsbi_resource->start + 1;
 		release_mem_region(gsbi_resource->start, size);
 		iounmap(msm_uport->mapped_gsbi);
@@ -822,7 +827,11 @@ static void msm_hs_submit_tx_locked(struct uart_port *uport)
 	dma_sync_single_for_device(uport->dev, tx->mapped_cmd_ptr_ptr,
 				   sizeof(u32 *), DMA_TO_DEVICE);
 
-	msm_dmov_enqueue_cmd(msm_uport->dma_tx_channel, &tx->xfer);
+	if ((tx->xfer.list.next == LIST_POISON1)
+			||	(tx->xfer.list.next == NULL))
+		msm_dmov_enqueue_cmd(msm_uport->dma_tx_channel, &tx->xfer);
+	else
+		printk(KERN_ERR "[BT]Error: tx already started in dmov\n");
 }
 
 /* Start to receive the next chunk of data */
@@ -845,7 +854,13 @@ static void msm_hs_start_rx_locked(struct uart_port *uport)
 	dsb();
 
 	msm_uport->rx.flush = FLUSH_NONE;
-	msm_dmov_enqueue_cmd(msm_uport->dma_rx_channel, &msm_uport->rx.xfer);
+
+	if ((msm_uport->rx.xfer.list.next == LIST_POISON1)
+			|| (msm_uport->rx.xfer.list.next == NULL))
+		msm_dmov_enqueue_cmd(msm_uport->dma_rx_channel,
+				&msm_uport->rx.xfer);
+	else
+		printk(KERN_ERR "[BT]Error: rx already started in dmov\n");
 
 }
 
@@ -1792,6 +1807,9 @@ static int uartdm_init_port(struct uart_port *uport)
 	INIT_WORK(&rx->tty_work, msm_hs_tty_flip_buffer_work);
 	INIT_DELAYED_WORK(&rx->flip_insert_work, flip_insert_work);
 
+	rx->xfer.list.next = LIST_POISON1;
+	tx->xfer.list.next = LIST_POISON1;
+
 	return ret;
 
 free_rx_command_ptr:
@@ -2024,10 +2042,12 @@ static void msm_hs_shutdown(struct uart_port *uport)
 	/* make sure wake_lock is released */
 	wake_lock_timeout(&msm_uport->rx.wake_lock, HZ / 10);
 
+	spin_unlock_irqrestore(&uport->lock, flags);
 	/* Free the interrupt */
 	free_irq(uport->irq, msm_uport);
 	if (use_low_power_wakeup(msm_uport))
 		free_irq(msm_uport->wakeup.irq, msm_uport);
+	spin_lock_irqsave(&uport->lock, flags);
 
 	msm_uport->imr_reg = 0;
 	msm_hs_write(uport, UARTDM_IMR_ADDR, msm_uport->imr_reg);

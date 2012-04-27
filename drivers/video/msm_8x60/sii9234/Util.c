@@ -18,7 +18,6 @@
 #include "TypeDefs.h"
 #include "Util.h"
 
-void DelayMS(word M_Sec)
-{
+void DelayMS (word M_Sec) {
 	hr_msleep(M_Sec);
-}
+	}

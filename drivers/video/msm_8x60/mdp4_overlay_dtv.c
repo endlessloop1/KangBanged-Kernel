@@ -35,7 +35,6 @@
 #include "mdp.h"
 #include "msm_fb.h"
 #include "mdp4.h"
-#include <mach/debug_display.h>
 
 #define DTV_BASE	0xD0000
 
@@ -55,7 +54,7 @@ static void __mdp_outp(uint32 port, uint32 value)
 #define MDP_OUTP(port, value)	__mdp_outp((uint32)(port), (value))
 #endif
 
-atomic_t mdp_dtv_on;
+atomic_t dtv_on;
 static int first_pixel_start_x;
 static int first_pixel_start_y;
 
@@ -148,6 +147,9 @@ int mdp4_dtv_on(struct platform_device *pdev)
 		pipe = dtv_pipe;
 	}
 
+	/* MDP cmd block enable */
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
+
 	pipe->src_height = fbi->var.yres;
 	pipe->src_width = fbi->var.xres;
 	pipe->src_h = fbi->var.yres;
@@ -179,7 +181,7 @@ int mdp4_dtv_on(struct platform_device *pdev)
 	dtv_underflow_clr = mfd->panel_info.lcdc.underflow_clr;
 	dtv_hsync_skew = mfd->panel_info.lcdc.hsync_skew;
 
-	PR_DISP_INFO("%s: <ID=%d %dx%d (%d,%d,%d), (%d,%d,%d) %dMHz>\n", __func__,
+	pr_info("%s: <ID=%d %dx%d (%d,%d,%d), (%d,%d,%d) %dMHz>\n", __func__,
 		var->reserved[3], var->xres, var->yres,
 		var->right_margin, var->hsync_len, var->left_margin,
 		var->lower_margin, var->vsync_len, var->upper_margin,
@@ -231,8 +233,6 @@ int mdp4_dtv_on(struct platform_device *pdev)
 	ctrl_polarity =
 	    (data_en_polarity << 2) | (vsync_polarity << 1) | (hsync_polarity);
 
-	/* MDP cmd block enable */
-        mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 
 	MDP_OUTP(MDP_BASE + DTV_BASE + 0x4, hsync_ctrl);
 	MDP_OUTP(MDP_BASE + DTV_BASE + 0x8, vsync_period);
@@ -248,39 +248,22 @@ int mdp4_dtv_on(struct platform_device *pdev)
 	MDP_OUTP(MDP_BASE + DTV_BASE + 0x30, active_v_start);
 	MDP_OUTP(MDP_BASE + DTV_BASE + 0x38, active_v_end);
 
-	/* MDP cmd block disable */
-        mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
-
 	/* Test pattern 8 x 8 pixel */
 	/* MDP_OUTP(MDP_BASE + DTV_BASE + 0x4C, 0x80000808); */
 
+	atomic_set(&dtv_on, true);
+
 	ret = panel_next_on(pdev);
-
-	/*MHL v1.1 compliance test, Test3.2.3.2 Test3.2.3.4*/
-	if((var->yres == 480) || (var->yres == 576)){
-		if(var->xres == 640 && var->yres == 480)
-			mdp4_set_limit_range(false);
-		else
-			mdp4_set_limit_range(true);
-	}
-	else
-		mdp4_set_limit_range(false);
-
-
 	if (ret == 0) {
-		atomic_set(&mdp_dtv_on, true);
-
 		/* enable DTV block */
-		mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 		MDP_OUTP(MDP_BASE + DTV_BASE, 1);
-		mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
-
 		mdp_pipe_ctrl(MDP_OVERLAY1_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
-
 		dev_info(&pdev->dev, "mdp4_overlay_dtv: on");
 	} else {
 		dev_warn(&pdev->dev, "mdp4_overlay_dtv: panel_next_on failed");
 	}
+	/* MDP cmd block disable */
+	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
 
 	return ret;
 }
@@ -289,22 +272,22 @@ int mdp4_dtv_off(struct platform_device *pdev)
 {
 	int ret = 0;
 
+	atomic_set(&dtv_on, false);
+
 	ret = panel_next_off(pdev);
 
-	/* disable DTV block */
+	/* MDP cmd block enable */
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 	MDP_OUTP(MDP_BASE + DTV_BASE, 0);
+	/* MDP cmd block disable */
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
-
 	mdp_pipe_ctrl(MDP_OVERLAY1_BLOCK, MDP_BLOCK_POWER_OFF, FALSE);
+
 
 	/* delay to make sure the last frame finishes */
 	msleep(100);
 
-	/* We also delay to turn writeback mode off after new overlay_set finishes */
-	atomic_set(&mdp_dtv_on, false);
-
-	PR_DISP_INFO("%s\n", __func__);
+	pr_info("%s\n", __func__);
 
 	/* dis-engage rgb2 from mixer1 */
 	if (dtv_pipe)
@@ -363,17 +346,16 @@ static void mdp4_overlay_dtv_ov_start(struct msm_fb_data_type *mfd)
 static void mdp4_overlay_dtv_wait4_ov_done(struct msm_fb_data_type *mfd,
 	struct mdp4_overlay_pipe *pipe)
 {
-	unsigned long flag;
 	u32 data = inpdw(MDP_BASE + DTV_BASE);
 
 	mfd->ov_start = false;
 
 	if (!(data & 0x1) || (pipe == NULL))
 		return;
-	wait_for_completion_killable_timeout(&dtv_pipe->comp, HZ/10);
-	spin_lock_irqsave(&mdp_done_lock, flag);
+	wait_for_completion_killable(&dtv_pipe->comp);
+//	spin_lock_irqsave(&mdp_done_lock, flag);
 	mdp_disable_irq(MDP_OVERLAY1_TERM);
-	spin_unlock_irqrestore(&mdp_done_lock, flag);
+//	spin_unlock_irqrestore(&mdp_done_lock, flag);
 }
 
 void mdp4_overlay_dtv_ov_done_push(struct msm_fb_data_type *mfd,
@@ -383,10 +365,8 @@ void mdp4_overlay_dtv_ov_done_push(struct msm_fb_data_type *mfd,
 	mdp4_overlay_reg_flush(pipe, 1);
 	mdp4_overlay_dtv_ov_start(mfd);
 
-	if (pipe->flags & MDP_OV_PLAY_NOWAIT) {
-		mfd->ov_start = false;
+	if (pipe->flags & MDP_OV_PLAY_NOWAIT)
 		return;
-	}
 
 	mdp4_overlay_dtv_wait4_ov_done(mfd, pipe);
 }
@@ -399,6 +379,7 @@ void mdp4_overlay_dtv_wait_for_ov(struct msm_fb_data_type *mfd,
 		return;
 	}
 	mdp4_overlay_dtv_wait4_ov_done(mfd, pipe);
+//	mdp4_set_perf_level();
 }
 
 void mdp4_external_vsync_dtv()
@@ -441,5 +422,8 @@ void mdp4_dtv_overlay(struct msm_fb_data_type *mfd)
 		mfd->ov_end = true;
 	}
 	mdp4_overlay_dtv_ov_done_push(mfd, pipe);
+
+	mdp4_stat.kickoff_dtv++;
+	mdp4_overlay_resource_release();
 	mutex_unlock(&mfd->dma->ov_mutex);
 }

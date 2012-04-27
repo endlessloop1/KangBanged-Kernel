@@ -160,9 +160,6 @@ static ssize_t mdp_reg_write(
 
 	cnt = sscanf(debug_buf, "%x %x", &off, &data);
 
-	if (cnt != 2)
-		return -EINVAL;
-
 	mdp_pipe_ctrl(MDP_CMD_BLOCK, MDP_BLOCK_POWER_ON, FALSE);
 	outpdw(MDP_BASE + off, data);
 	wmb();
@@ -551,9 +548,6 @@ static ssize_t pmdh_reg_write(
 
 	cnt = sscanf(debug_buf, "%x %x", &off, &data);
 
-	if (cnt != 2)
-		return -EINVAL;
-
 	mddi_reg_write(0, off, data);
 
 	return count;
@@ -686,9 +680,6 @@ static ssize_t emdh_reg_write(
 	debug_buf[count] = 0;	/* end of string */
 
 	cnt = sscanf(debug_buf, "%x %x", &off, &data);
-
-	if (cnt != 2)
-		return -EINVAL;
 
 	mddi_reg_write(1, off, data);
 
@@ -900,9 +891,6 @@ static ssize_t dbg_reg_write(
 	debug_buf[count] = 0;	/* end of string */
 
 	cnt = sscanf(debug_buf, "%x %x", &off, &data);
-
-	if (cnt != 2)
-		return -EINVAL;
 
 	writel(data, dbg_base + off);
 	wmb();

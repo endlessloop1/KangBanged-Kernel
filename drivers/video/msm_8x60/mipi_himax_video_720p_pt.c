@@ -20,7 +20,6 @@
 #include "msm_fb.h"
 #include "mipi_dsi.h"
 #include "mipi_himax.h"
-#include <mach/debug_display.h>
 
 static struct msm_panel_info pinfo;
 
@@ -72,12 +71,26 @@ static int __init mipi_video_himax_720p_pt_init(void)
      * need to update once get confirmed settings from Sharp
 	 */
 
-	pinfo.lcdc.h_back_porch = 96;
-	pinfo.lcdc.h_front_porch = 90;
-	pinfo.lcdc.h_pulse_width = 8;
-	pinfo.lcdc.v_back_porch = 4;
-	pinfo.lcdc.v_front_porch = 14;
-	pinfo.lcdc.v_pulse_width = 2;
+
+	if (panel_type == PANEL_ID_VIG_CHIMEI_HX)
+	{
+		pinfo.lcdc.h_back_porch = 96;
+		pinfo.lcdc.h_front_porch = 96;
+		pinfo.lcdc.h_pulse_width = 8;
+		pinfo.lcdc.v_back_porch = 4;
+		pinfo.lcdc.v_front_porch = 14;
+		pinfo.lcdc.v_pulse_width = 2;
+	}else
+	{
+		pinfo.lcdc.h_back_porch = 96;
+		pinfo.lcdc.h_front_porch = 96;
+		pinfo.lcdc.h_pulse_width = 8;
+		pinfo.lcdc.v_back_porch = 4;
+		pinfo.lcdc.v_front_porch = 14;
+		pinfo.lcdc.v_pulse_width = 2;
+	}
+
+	pinfo.clk_rate = 560000000;
 	pinfo.lcdc.border_clr = 0;	/* blk */
 	pinfo.lcdc.underflow_clr = 0xff;	/* blue */
 	pinfo.lcdc.hsync_skew = 0;
@@ -110,14 +123,17 @@ static int __init mipi_video_himax_720p_pt_init(void)
 #endif
 
 	if (panel_type == PANEL_ID_VIG_CHIMEI_HX)
+	{
 		pinfo.mipi.dsi_phy_db = &dsi_video_mode_phy_db_CMI;
-	else
+	}else
+	{
 		pinfo.mipi.dsi_phy_db = &dsi_video_mode_phy_db;
+	}
 
 	ret = mipi_himax_device_register(&pinfo, MIPI_DSI_PRIM, MIPI_DSI_PANEL_WVGA_PT);
 
 	if (ret)
-		PR_DISP_ERR("%s: failed to register device!\n", __func__);
+		pr_err("%s: failed to register device!\n", __func__);
 
 	return ret;
 }

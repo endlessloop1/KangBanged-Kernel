@@ -33,14 +33,4 @@
 int mipi_novatek_device_register(struct msm_panel_info *pinfo,
 					u32 channel, u32 panel);
 
-extern int mipi_status;
-extern int bl_level_prevset;
-extern struct mutex cmdlock;
-extern struct dsi_cmd_desc *mipi_power_on_cmd;
-extern struct dsi_cmd_desc *mipi_power_off_cmd;
-extern int mipi_power_on_cmd_size;
-extern int mipi_power_off_cmd_size;
-extern char ptype[60];
-
 #endif  /* MIPI_NOVATEK_BLUE_H */
-

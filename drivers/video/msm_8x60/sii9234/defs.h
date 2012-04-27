@@ -17,6 +17,9 @@
 #include "sii9234.h"
 #include <mach/debug_display.h>
 
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Project Definitions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define T_MONITORING_PERIOD		10
 #define SiI9234_PRODUCT_ID      0x9234
 #define SiI_DEVICE_ID			0xB0
@@ -26,11 +29,21 @@
 #define TX_HW_RESET_PERIOD		10
 
 
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+// Debug Definitions
+// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #define DISABLE 0x00
 #define ENABLE  0xFF
 
+// Compile debug prints inline or not
 #define CONF__TPI_DEBUG_PRINT   (ENABLE)
 
+/*\
+| | Debug Print Macro
+| |
+| | Note: TPI_DEBUG_PRINT Requires double parenthesis
+| | Example:  TPI_DEBUG_PRINT(("hello, world!\n"));
+\*/
 
 #if (CONF__TPI_DEBUG_PRINT == ENABLE)
     #define TPI_DEBUG_PRINT(x...) PR_DISP_DEBUG x

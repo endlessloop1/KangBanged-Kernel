@@ -92,7 +92,7 @@
 #include <mach/htc_headset_8x60.h>
 #include <linux/i2c/isl9519.h>
 #include <mach/tpa2051d3.h>
-#ifdef CONFIG_USB_ANDROID
+#ifdef CONFIG_USB_G_ANDROID
 #include <linux/usb/android_composite.h>
 #endif
 #include <mach/usb_gadget_fserial.h>
@@ -111,7 +111,7 @@
 #include "devices-msm8x60.h"
 #include "cpuidle.h"
 #include "pm.h"
-#include "rpm.h"
+#include <mach/rpm.h>
 #include "spm.h"
 #include "rpm_log.h"
 #include "timer.h"
@@ -122,7 +122,7 @@
 #include "gpiomux.h"
 #include "gpiomux-8x60.h"
 #include "mpm.h"
-#include "rpm-regulator.h"
+#include <mach/rpm-regulator.h>
 #include "sysinfo-8x60.h"
 #include <mach/htc_usb.h>
 #include <mach/rpc_hsusb.h>
@@ -135,6 +135,7 @@
 #include <linux/a1026.h>
 #include "clock-8x60.h"
 #include "rpm_stats.h"
+#include "acpuclock.h"
 
 extern int panel_type;
 
@@ -142,6 +143,9 @@ extern int panel_type;
 
 #ifdef CONFIG_PERFLOCK
 #include <mach/perflock.h>
+#endif
+#ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_2_PHASE
+int set_two_phase_freq(int cpufreq);
 #endif
 
 /*
@@ -303,9 +307,6 @@ static struct msm_spm_platform_data msm_spm_data[] __initdata = {
 	},
 };
 
-static struct msm_acpu_clock_platform_data msm8x60_acpu_clock_data = {
-};
-
 #ifdef CONFIG_PERFLOCK
 static unsigned holiday_perf_acpu_table_1188k[] = {
 	384000000,
@@ -329,8 +330,8 @@ static struct regulator_consumer_supply saw_s1_supply =
 static struct regulator_init_data saw_s0_init_data = {
 		.constraints = {
 			.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
-			.min_uV = 840000,
-			.max_uV = 1250000,
+			.min_uV = VOLTAGE_MIN,
+			.max_uV = VOLTAGE_MAX,
 		},
 		.num_consumer_supplies = 1,
 		.consumer_supplies = &saw_s0_supply,
@@ -339,8 +340,8 @@ static struct regulator_init_data saw_s0_init_data = {
 static struct regulator_init_data saw_s1_init_data = {
 		.constraints = {
 			.valid_ops_mask = REGULATOR_CHANGE_VOLTAGE,
-			.min_uV = 840000,
-			.max_uV = 1250000,
+			.min_uV = VOLTAGE_MIN,
+			.max_uV = VOLTAGE_MAX,
 		},
 		.num_consumer_supplies = 1,
 		.consumer_supplies = &saw_s1_supply,
@@ -736,7 +737,7 @@ static struct platform_device cable_detect_device = {
 	},
 };
 
-#ifdef CONFIG_USB_ANDROID
+#ifdef CONFIG_USB_G_ANDROID
 static struct usb_mass_storage_platform_data mass_storage_pdata = {
 	.nluns		= 2,
 	.vendor		= "HTC",
@@ -751,7 +752,7 @@ static struct platform_device usb_mass_storage_device = {
 	},
 };
 
-#ifdef CONFIG_USB_ANDROID_RNDIS
+#ifdef CONFIG_USB_G_ANDROID_RNDIS
 static struct usb_ether_platform_data rndis_pdata = {
 	/* ethaddr is filled by board_serialno_setup */
 	.vendorID  = 0x18d1,
@@ -1104,7 +1105,7 @@ static struct msm_camera_sensor_flash_src msm_flash_src = {
 
 static struct camera_flash_cfg msm_camera_sensor_flash_cfg = {
 	.low_temp_limit		= 5,
-	.low_cap_limit		= 15,
+	.low_cap_limit		= 5,
 };
 
 #ifdef CONFIG_S5K3H2YX
@@ -1542,7 +1543,7 @@ static void __init msm8x60_init_dsps(void)
 #define MSM_FB_PRIM_BUF_SIZE 0x708000
 #else
 /* prim = 1024 x 600 x 4(bpp) x 2(pages) */
-#define MSM_FB_PRIM_BUF_SIZE 0x4B0000
+#define MSM_FB_PRIM_BUF_SIZE 0x500000
 #endif
 
 #ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL
@@ -1558,18 +1559,13 @@ static void __init msm8x60_init_dsps(void)
 #else /* CONFIG_FB_MSM_HDMI_MSM_PANEL */
 #define MSM_FB_SIZE roundup(MSM_FB_PRIM_BUF_SIZE + MSM_FB_DSUB_PMEM_ADDER, 4096)
 #endif /* CONFIG_FB_MSM_HDMI_MSM_PANEL */
+
 #define MSM_PMEM_SF_SIZE 0x4000000 /* 64 Mbytes */
 #define MSM_PMEM_RMT_STORAGE_SIZE 0x100000 /* 1 Mbytes */
-#define MSM_OVERLAY_BLT_SIZE   roundup(MSM_FB_PRIM_BUF_SIZE, 4096)
+#define MSM_OVERLAY_BLT_SIZE	roundup(0x500000, 4096)
 
-#define MSM_PMEM_ADSP_SIZE         0x2F00000
+#define MSM_PMEM_ADSP_SIZE         0x3300000
 #define MSM_PMEM_AUDIO_SIZE        0x239000
-
-#define MSM_PMEM_SF_BASE		(0x40400000)
-#define MSM_PMEM_ADSP_BASE		(0x80000000 - MSM_PMEM_ADSP_SIZE)
-#define MSM_OVERLAY_BLT_BASE		(MSM_PMEM_SF_BASE + MSM_PMEM_SF_SIZE)
-#define MSM_FB_BASE			(MSM_OVERLAY_BLT_BASE + MSM_OVERLAY_BLT_SIZE)
-#define MSM_PMEM_AUDIO_BASE		(MSM_FB_BASE + MSM_FB_SIZE)
 
 #define MSM_SMI_BASE          0x38000000
 /* Kernel SMI PMEM Region for video core, used for Firmware */
@@ -1796,52 +1792,6 @@ static struct platform_device android_pmem_smipool_device = {
 
 #endif
 
-#ifdef CONFIG_BUILD_CIQ
-static struct android_pmem_platform_data android_pmem_ciq_pdata = {
-	.name = "pmem_ciq",
-	.cached = 0,
-};
-
-static struct android_pmem_platform_data android_pmem_ciq1_pdata = {
-	.name = "pmem_ciq1",
-	.cached = 0,
-};
-
-static struct android_pmem_platform_data android_pmem_ciq2_pdata = {
-	.name = "pmem_ciq2",
-	.cached = 0,
-};
-
-static struct android_pmem_platform_data android_pmem_ciq3_pdata = {
-	.name = "pmem_ciq3",
-	.cached = 0,
-};
-
-static struct platform_device android_pmem_ciq_device = {
-	.name = "android_pmem",
-	.id = 8,
-	.dev = { .platform_data = &android_pmem_ciq_pdata },
-};
-
-static struct platform_device android_pmem_ciq1_device = {
-	.name = "android_pmem",
-	.id = 9,
-	.dev = { .platform_data = &android_pmem_ciq1_pdata },
-};
-
-static struct platform_device android_pmem_ciq2_device = {
-	.name = "android_pmem",
-	.id = 10,
-	.dev = { .platform_data = &android_pmem_ciq2_pdata },
-};
-
-static struct platform_device android_pmem_ciq3_device = {
-	.name = "android_pmem",
-	.id = 11,
-	.dev = { .platform_data = &android_pmem_ciq3_pdata },
-};
-#endif
-
 #ifdef CONFIG_FB_MSM_HDMI_MSM_PANEL
 static struct resource hdmi_msm_resources[] = {
 	{
@@ -1930,17 +1880,19 @@ static void __init msm8x60_allocate_memory_regions(void)
 	unsigned long size;
 
 	size = MSM_FB_SIZE;
-	msm_fb_resources[0].start = MSM_FB_BASE;
+	addr = alloc_bootmem(size);
+	msm_fb_resources[0].start = __pa(addr);
 	msm_fb_resources[0].end = msm_fb_resources[0].start + size - 1;
 	pr_info("allocating %lu bytes at %p (%lx physical) for fb\n",
-		size, __va(MSM_FB_BASE), (unsigned long)MSM_FB_BASE);
+		size, addr, __pa(addr));
 
-	msm_fb_resources[1].start = MSM_OVERLAY_BLT_BASE + 0x10000000;;
+	addr = alloc_bootmem(MSM_OVERLAY_BLT_SIZE);
+	msm_fb_resources[1].start = __pa(addr);
 	msm_fb_resources[1].end = msm_fb_resources[1].start +
 		MSM_OVERLAY_BLT_SIZE - 1;
-	pr_info("allocating %lu bytes at %p (%lx physical) for "
-		"overlay write back\n", (unsigned long) MSM_OVERLAY_BLT_SIZE,
-		__va(MSM_OVERLAY_BLT_BASE), (unsigned long)MSM_OVERLAY_BLT_BASE);
+	pr_info("allocating %lu bytes at %p (%lx physical) for"
+		"overlay write back\n", (unsigned long)MSM_OVERLAY_BLT_SIZE,
+		addr, __pa(addr));
 
 	addr = alloc_bootmem(MSM_PMEM_RMT_STORAGE_SIZE);
 	pr_info("allocating %d bytes at %p (0x%lx physical) for "
@@ -1962,11 +1914,11 @@ static void __init msm8x60_allocate_memory_regions(void)
 #ifdef CONFIG_ANDROID_PMEM
 	size = pmem_adsp_size;
 	if (size) {
-		android_pmem_adsp_pdata.start = MSM_PMEM_ADSP_BASE;
+		addr = alloc_bootmem(size);
+		android_pmem_adsp_pdata.start = __pa(addr);
 		android_pmem_adsp_pdata.size = size;
 		pr_info("allocating %lu bytes at %p (%lx physical) for adsp "
-			"pmem arena\n", size, __va(MSM_PMEM_ADSP_BASE),
-			(unsigned long)MSM_PMEM_ADSP_BASE);
+			"pmem arena\n", size, addr, __pa(addr));
 	}
 
 	size = MSM_PMEM_SMIPOOL_SIZE;
@@ -1980,58 +1932,20 @@ static void __init msm8x60_allocate_memory_regions(void)
 
 	size = MSM_PMEM_AUDIO_SIZE;
 	if (size) {
-		android_pmem_audio_pdata.start = MSM_PMEM_AUDIO_BASE + 0x10000000;
+		addr = alloc_bootmem(size);
+		android_pmem_audio_pdata.start = __pa(addr);
 		android_pmem_audio_pdata.size = size;
 		pr_info("allocating %lu bytes at %p (%lx physical) for audio "
-			"pmem arena\n", size, __va(MSM_PMEM_AUDIO_BASE),
-			(unsigned long) MSM_PMEM_AUDIO_BASE);
+			"pmem arena\n", size, addr, __pa(addr));
 	}
 
 	size = pmem_sf_size;
 	if (size) {
-		android_pmem_pdata.start = MSM_PMEM_SF_BASE + 0x10000000;
+		addr = alloc_bootmem(size);
+		android_pmem_pdata.start = __pa(addr);
 		android_pmem_pdata.size = size;
 		pr_info("allocating %lu bytes at %p (%lx physical) for sf "
-			"pmem arena\n", size, __va(MSM_PMEM_SF_BASE),
-			(unsigned long) MSM_PMEM_SF_BASE);
-	}
-#endif
-
-#ifdef CONFIG_BUILD_CIQ
-	size = MSM_PMEM_CIQ_SIZE;
-	if (size) {
-		android_pmem_ciq_pdata.start = MSM_PMEM_CIQ_BASE;
-		android_pmem_ciq_pdata.size = size;
-		pr_info("allocating %lu bytes at %lx physical for user"
-			" smi  pmem arena\n", size,
-			(unsigned long) MSM_PMEM_CIQ_BASE);
-	}
-
-	size = MSM_PMEM_CIQ1_SIZE;
-	if (size) {
-		android_pmem_ciq1_pdata.start = MSM_PMEM_CIQ1_BASE;
-		android_pmem_ciq1_pdata.size = size;
-		pr_info("allocating %lu bytes at %lx physical for user"
-			" smi  pmem arena\n", size,
-			(unsigned long) MSM_PMEM_CIQ1_BASE);
-	}
-
-	size = MSM_PMEM_CIQ2_SIZE;
-	if (size) {
-		android_pmem_ciq2_pdata.start = MSM_PMEM_CIQ2_BASE;
-		android_pmem_ciq2_pdata.size = size;
-		pr_info("allocating %lu bytes at %lx physical for user"
-			" smi  pmem arena\n", size,
-			(unsigned long) MSM_PMEM_CIQ2_BASE);
-	}
-
-	size = MSM_PMEM_CIQ3_SIZE;
-	if (size) {
-		android_pmem_ciq3_pdata.start = MSM_PMEM_CIQ3_BASE;
-		android_pmem_ciq3_pdata.size = size;
-		pr_info("allocating %lu bytes at %lx physical for user"
-			" smi  pmem arena\n", size,
-			(unsigned long) MSM_PMEM_CIQ3_BASE);
+			"pmem arena\n", size, addr, __pa(addr));
 	}
 #endif
 }
@@ -2276,9 +2190,9 @@ static struct rpm_vreg_pdata rpm_vreg_init_pdata[RPM_VREG_ID_MAX] = {
 	RPM_VREG_INIT_LDO(PM8058_L24, 0, 1, 0, 1200000, 1200000, LDO150HMIN, 0),
 	RPM_VREG_INIT_LDO(PM8058_L25, 0, 1, 0, 1200000, 1200000, LDO150HMIN, 0),
 
-	RPM_VREG_INIT_SMPS(PM8058_S0, 0, 1, 1, 500000, 1250000, SMPS_HMIN, 0,
+	RPM_VREG_INIT_SMPS(PM8058_S0, 0, 1, 1, 500000, VOLTAGE_MAX, SMPS_HMIN, 0,
 		RPM_VREG_FREQ_1p92),
-	RPM_VREG_INIT_SMPS(PM8058_S1, 0, 1, 1, 500000, 1250000, SMPS_HMIN, 0,
+	RPM_VREG_INIT_SMPS(PM8058_S1, 0, 1, 1, 500000, VOLTAGE_MAX, SMPS_HMIN, 0,
 		RPM_VREG_FREQ_1p92),
 	RPM_VREG_INIT_SMPS(PM8058_S2, 0, 1, 0, 1200000, 1400000, SMPS_HMIN,
 		RPM_VREG_PIN_CTRL_A0, RPM_VREG_FREQ_1p92),
@@ -2717,7 +2631,7 @@ static struct pm8058_led_config pm_led_config_white_sku[] = {
 		.duites_size = 8,
 		.duty_time_ms = 32,
 		.lut_flag = PM_PWM_LUT_RAMP_UP | PM_PWM_LUT_PAUSE_HI_EN,
-		.out_current = 2,
+		.out_current = 8,
 	},
 
 };
@@ -2991,7 +2905,7 @@ static struct platform_device *surf_devices[] __initdata = {
 #ifdef CONFIG_MSM_DSPS
 	&msm_dsps_device,
 #endif
-#ifdef CONFIG_USB_ANDROID_QCT_DIAG
+#ifdef CONFIG_USB_G_ANDROID_QCT_DIAG
        &usb_diag_device,
 #endif
 #ifdef CONFIG_BATTERY_MSM
@@ -3005,12 +2919,6 @@ static struct platform_device *surf_devices[] __initdata = {
 	&android_pmem_adsp_device,
 	&android_pmem_audio_device,
 	&android_pmem_smipool_device,
-#endif
-#ifdef CONFIG_BUILD_CIQ
-	&android_pmem_ciq_device,
-	&android_pmem_ciq1_device,
-	&android_pmem_ciq2_device,
-	&android_pmem_ciq3_device,
 #endif
 #ifdef CONFIG_MSM_ROTATOR
 	&msm_rotator_device,
@@ -5617,7 +5525,7 @@ void msm_snddev_rx_route_deconfig(void)
 {
 	pr_debug("%s\n", __func__);
 }
-#ifdef CONFIG_USB_ANDROID
+#ifdef CONFIG_USB_G_ANDROID
 static void holiday_add_usb_devices(void)
 {
 	printk("%s\n", __func__);
@@ -5637,7 +5545,7 @@ static void holiday_add_usb_devices(void)
 	msm_device_hsusb.dev.platform_data = &msm_hsusb_pdata;
 	platform_device_register(&msm_device_hsusb);
 
-#ifdef CONFIG_USB_ANDROID_RNDIS
+#ifdef CONFIG_USB_G_ANDROID_RNDIS
 	platform_device_register(&rndis_device);
 #endif
 
@@ -5756,7 +5664,7 @@ static void __init holiday_init(void)
 
 	platform_add_devices(early_devices, ARRAY_SIZE(early_devices));
 	/* CPU frequency control is not supported on simulated targets. */
-	msm_acpu_clock_init(&msm8x60_acpu_clock_data);
+	acpuclk_init(&acpuclk_8x60_soc_data);
 
 #ifdef CONFIG_PERFLOCK
 	if (holiday_perf_acpu_table_1188k[PERF_LOCK_HIGHEST] == get_max_cpu_freq() * 1000 ) {
@@ -5768,6 +5676,9 @@ static void __init holiday_init(void)
 		holiday_perflock_data.table_size = ARRAY_SIZE(holiday_perf_acpu_table_1512k);
 	}
 	perflock_init(&holiday_perflock_data);
+#endif
+#ifdef CONFIG_CPU_FREQ_GOV_ONDEMAND_2_PHASE
+	set_two_phase_freq(1134000);
 #endif
 
 	msm8x60_init_tlmm();
@@ -5804,10 +5715,8 @@ static void __init holiday_init(void)
 	holiday_mhl_init();
 #endif
 
-#ifdef CONFIG_USB_ANDROID
-	/* not load usb driver in gift_mode mode*/
-	if (board_mfg_mode() != 7)
-		holiday_add_usb_devices();
+#ifdef CONFIG_USB_G_ANDROID
+	holiday_add_usb_devices();
 #endif
 	msm_pm_set_platform_data(msm_pm_data, ARRAY_SIZE(msm_pm_data));
 	msm_cpuidle_set_states(msm_cstates, ARRAY_SIZE(msm_cstates),

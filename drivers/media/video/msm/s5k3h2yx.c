@@ -65,7 +65,11 @@
 #include <linux/slab.h>
 
 #ifdef CONFIG_MSM_CAMERA_8X60
+#ifdef CONFIG_CAMERA_ZSL
+#include <mach/camera-8x60_ZSL.h>
+#else
 #include <mach/camera-8x60.h>
+#endif
 #else
 #include <mach/camera.h>
 #endif
@@ -90,7 +94,8 @@
 #define SENSOR_VIDEO_SIZE_WIDTH_FAST 1640
 #define SENSOR_VIDEO_SIZE_HEIGHT_FAST  916
 #endif
-
+#define SENSOR_VIDEO_SIZE_WIDTH_FAST_7X30 1632
+#define SENSOR_VIDEO_SIZE_HEIGHT_FAST_7X30  576
 #define SENSOR_QTR_SIZE_WIDTH 1640
 #define SENSOR_QTR_SIZE_HEIGHT 1232
 
@@ -106,9 +111,14 @@
 #define SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST 1830
 #define SENSOR_VER_VIDEO_BLK_LINES_FAST 16
 #endif
-
+#define SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST_7X30 1838
+#define SENSOR_VER_VIDEO_BLK_LINES_FAST_7X30 136 //16
 #define SENSOR_HRZ_QTR_BLK_PIXELS 1830
+#if defined(CONFIG_MACH_HOLIDAY) || defined(CONFIG_MACH_RUBY)
+#define SENSOR_VER_QTR_BLK_LINES 518
+#else
 #define SENSOR_VER_QTR_BLK_LINES 16
+#endif
 
 #define S5K3H2YX_AF_I2C_ADDR 0x18
 #define S5K3H2YX_VCM_CODE_MSB 0x04
@@ -188,6 +198,13 @@ enum s5k3h2yx_reg_update_t{
 
 static int sensor_probe_node = 0;
 static int preview_frame_count = 0;
+static int g_gpio_vcm_pwd = 0;
+#ifdef CONFIG_MACH_RUBY
+int s5k3h2yx_vcm_workaround(int on_off);
+void vcm_workaround_set_camera_running(int isRunning);
+int vcm_workaround_get_camera_running(void);
+#endif
+
 
 static struct wake_lock s5k3h2yx_wake_lock;
 
@@ -408,6 +425,7 @@ static void s5k3h2yx_get_pict_fps(uint16_t fps, uint16_t *pfps)
 	/* input fps is preview fps in Q8 format */
 	uint32_t divider, d1, d2;
 	uint16_t snapshot_height, preview_height, preview_width, snapshot_width;
+	struct msm_camera_sensor_info *sinfo = s5k3h2yx_pdev->dev.platform_data;
 
 	if (s5k3h2yx_ctrl->prev_res == QTR_SIZE) {
 		preview_width =
@@ -421,10 +439,20 @@ static void s5k3h2yx_get_pict_fps(uint16_t fps, uint16_t *pfps)
 		preview_height =
 			SENSOR_VIDEO_SIZE_HEIGHT + SENSOR_VER_VIDEO_BLK_LINES;
 	} else if (s5k3h2yx_ctrl->prev_res == FAST_VIDEO_SIZE) {
-		preview_width =
-			SENSOR_VIDEO_SIZE_WIDTH_FAST  + SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST;
-		preview_height =
-			SENSOR_VIDEO_SIZE_HEIGHT_FAST + SENSOR_VER_VIDEO_BLK_LINES_FAST;
+		if (sinfo->camera_platform == MSM_CAMERA_PLTFORM_7X30)
+		{
+			preview_width =
+				SENSOR_VIDEO_SIZE_WIDTH_FAST_7X30  + SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST_7X30;
+			preview_height =
+				SENSOR_VIDEO_SIZE_HEIGHT_FAST_7X30 + SENSOR_VER_VIDEO_BLK_LINES_FAST_7X30;
+		}
+		else
+		{
+			preview_width =
+				SENSOR_VIDEO_SIZE_WIDTH_FAST  + SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST;
+			preview_height =
+				SENSOR_VIDEO_SIZE_HEIGHT_FAST + SENSOR_VER_VIDEO_BLK_LINES_FAST;
+		}
 	} else {
 		/* full size resolution used for preview. */
 		preview_width =
@@ -456,12 +484,17 @@ static void s5k3h2yx_get_pict_fps(uint16_t fps, uint16_t *pfps)
 
 static uint16_t s5k3h2yx_get_prev_lines_pf(void)
 {
+	struct msm_camera_sensor_info *sinfo = s5k3h2yx_pdev->dev.platform_data;
+
 	if (s5k3h2yx_ctrl->prev_res == QTR_SIZE) {
 		return (SENSOR_QTR_SIZE_HEIGHT + SENSOR_VER_QTR_BLK_LINES);
 	} else if (s5k3h2yx_ctrl->prev_res == VIDEO_SIZE) {
 		return (SENSOR_VIDEO_SIZE_HEIGHT + SENSOR_VER_VIDEO_BLK_LINES);
 	} else if (s5k3h2yx_ctrl->prev_res == FAST_VIDEO_SIZE) {
-		return (SENSOR_VIDEO_SIZE_HEIGHT_FAST + SENSOR_VER_VIDEO_BLK_LINES_FAST);
+		if (sinfo->camera_platform == MSM_CAMERA_PLTFORM_7X30)
+			return (SENSOR_VIDEO_SIZE_HEIGHT_FAST_7X30 + SENSOR_VER_VIDEO_BLK_LINES_FAST_7X30 );
+		else
+			return (SENSOR_VIDEO_SIZE_HEIGHT_FAST + SENSOR_VER_VIDEO_BLK_LINES_FAST);
 	} else  {
 		return (SENSOR_FULL_SIZE_HEIGHT + SENSOR_VER_FULL_BLK_LINES);
 	}
@@ -469,12 +502,17 @@ static uint16_t s5k3h2yx_get_prev_lines_pf(void)
 
 static uint16_t s5k3h2yx_get_prev_pixels_pl(void)
 {
+	struct msm_camera_sensor_info *sinfo = s5k3h2yx_pdev->dev.platform_data;
+
 	if (s5k3h2yx_ctrl->prev_res == QTR_SIZE) {
 		return (SENSOR_QTR_SIZE_WIDTH + SENSOR_HRZ_QTR_BLK_PIXELS);
 	} else if (s5k3h2yx_ctrl->prev_res == VIDEO_SIZE) {
 		return (SENSOR_VIDEO_SIZE_WIDTH + SENSOR_HRZ_VIDEO_BLK_PIXELS);
 	} else if (s5k3h2yx_ctrl->prev_res == FAST_VIDEO_SIZE) {
-		return (SENSOR_VIDEO_SIZE_WIDTH_FAST + SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST);
+		if (sinfo->camera_platform == MSM_CAMERA_PLTFORM_7X30)
+			return (SENSOR_VIDEO_SIZE_WIDTH_FAST_7X30 + SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST_7X30 );
+		else
+			return (SENSOR_VIDEO_SIZE_WIDTH_FAST + SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST);
 	} else  {
 		return (SENSOR_FULL_SIZE_WIDTH + SENSOR_HRZ_FULL_BLK_PIXELS);
 }
@@ -536,6 +574,7 @@ static int32_t s5k3h2yx_write_exp_gain
 	uint32_t intg_t_msb, intg_t_lsb;
 	uint32_t ll_pck_msb, ll_pck_lsb;
 	struct s5k3h2yx_i2c_reg_conf tbl[3];
+	struct msm_camera_sensor_info *sinfo = s5k3h2yx_pdev->dev.platform_data;
 
 	CDBG("Line:%d s5k3h2yx_write_exp_gain \n", __LINE__);
 
@@ -558,11 +597,22 @@ static int32_t s5k3h2yx_write_exp_gain
 			ll_pck = SENSOR_VIDEO_SIZE_WIDTH +
 				SENSOR_HRZ_VIDEO_BLK_PIXELS;
 		} else if (s5k3h2yx_ctrl->prev_res == FAST_VIDEO_SIZE) {
-			fl_lines = SENSOR_VIDEO_SIZE_HEIGHT_FAST+
-				SENSOR_VER_VIDEO_BLK_LINES_FAST;
+			if (sinfo->camera_platform == MSM_CAMERA_PLTFORM_7X30)
+			{
+				fl_lines = SENSOR_VIDEO_SIZE_HEIGHT_FAST_7X30 +
+					SENSOR_VER_VIDEO_BLK_LINES_FAST_7X30;
 
-			ll_pck = SENSOR_VIDEO_SIZE_WIDTH_FAST +
-				SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST;
+				ll_pck = SENSOR_VIDEO_SIZE_WIDTH_FAST_7X30 +
+					SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST_7X30;
+			}
+			else
+			{
+				fl_lines = SENSOR_VIDEO_SIZE_HEIGHT_FAST+
+					SENSOR_VER_VIDEO_BLK_LINES_FAST;
+
+				ll_pck = SENSOR_VIDEO_SIZE_WIDTH_FAST +
+					SENSOR_HRZ_VIDEO_BLK_PIXELS_FAST;
+			}
 		} else {
 			fl_lines = SENSOR_FULL_SIZE_HEIGHT +
 				SENSOR_VER_FULL_BLK_LINES;
@@ -678,7 +728,7 @@ static int32_t s5k3h2yx_setting(int rt)
 			s5k3h2yx_csi_params.lane_cnt = 2;
 			s5k3h2yx_csi_params.lane_assign = 0xe4;
 			s5k3h2yx_csi_params.dpcm_scheme = 0;
-			s5k3h2yx_csi_params.settle_cnt = 20;
+			s5k3h2yx_csi_params.settle_cnt = 42;
 			s5k3h2yx_csi_params.hs_impedence = 0x0F;
 			s5k3h2yx_csi_params.mipi_driving_strength = 0;
 			rc = msm_camio_csi_config(&s5k3h2yx_csi_params);
@@ -959,6 +1009,11 @@ static int s5k3h2yx_common_deinit(const struct msm_camera_sensor_info *data)
 		s5k3h2yx_vreg_disable(s5k3h2yx_pdev);
 	}
 
+	pr_info("[CAM]  s5k3h2yx_common_deinit()  camera_running=0\n");
+	msleep(1);
+#ifdef CONFIG_MACH_RUBY
+	vcm_workaround_set_camera_running(0);
+#endif
 	return 0;
 }
 
@@ -973,6 +1028,11 @@ static int s5k3h2yx_common_init(const struct msm_camera_sensor_info *data)
 	uint16_t chipid = 0;
 
 	pr_info("[CAM]%s\n", __func__);
+	pr_info("[CAM]  s5k3h2yx_common_init()  camera_running=1\n");
+#ifdef CONFIG_MACH_RUBY
+	vcm_workaround_set_camera_running(1);
+#endif
+	msleep(1);
 
 	s5k3h2yx_vreg_enable(s5k3h2yx_pdev);
 
@@ -1003,6 +1063,9 @@ static int s5k3h2yx_common_init(const struct msm_camera_sensor_info *data)
 	mdelay(1);
 
 	if (data->vcm_pwd) {
+	  if (g_gpio_vcm_pwd == 0)
+		g_gpio_vcm_pwd = data->vcm_pwd;
+
 	  if (data->gpio_set_value_force) {/* force to set gpio */
 		gpio_set_value(data->vcm_pwd, 1);
 	  } else {
@@ -1044,6 +1107,11 @@ static int s5k3h2yx_common_init(const struct msm_camera_sensor_info *data)
 
 init_fail:
 	pr_err("[CAM]s5k3h2yx_common_init failed\n");
+
+	pr_info("[CAM]  s5k3h2yx_common_init()  camera_running=0\n");
+#ifdef CONFIG_MACH_RUBY
+	vcm_workaround_set_camera_running(0);
+#endif
 init_done:
 	return rc;
 }
@@ -1699,6 +1767,255 @@ int s5k3h2yx_sensor_config(void __user *argp)
 
   return rc;
 }
+
+/* For HW VCM work-around */
+/**********************************************************************************/
+#ifdef CONFIG_MACH_RUBY
+int s5k3h2yx_vcm_workaround(int on_off)
+{
+	static int vcm_on = 0;
+	struct msm_camera_sensor_info *sinfo;
+
+	if (vcm_workaround_get_camera_running() == 1) {
+		pr_info("[CAM]  %s  camera_running is running\n", __func__);
+		return 0;
+	}
+
+	if (s5k3h2yx_client == NULL) {
+		pr_info("[CAM]  %s  s5k3h2yx_client is NULL\n", __func__);
+		return -EFAULT;
+	}
+
+	if (g_gpio_vcm_pwd == 0) {
+		pr_info("[CAM]  %s  g_gpio_vcm_pwd = 0\n", __func__);
+		return -EFAULT;
+	}
+
+	pr_info("[CAM]  s5k3h2yx_vcm_workaround()  on_off=%d\n", on_off);
+
+	if (on_off == 1 && vcm_on == 0) {
+		vcm_on = 1;
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  s5k3h2yx_vreg_enable()  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			s5k3h2yx_vreg_enable(s5k3h2yx_pdev);
+			mdelay(1);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  camera_gpio_on()  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			sinfo = s5k3h2yx_pdev->dev.platform_data;
+			sinfo->pdata->camera_gpio_on();
+			mdelay(1);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  gpio_vcm_pwd ON  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			gpio_set_value(g_gpio_vcm_pwd, 1);
+			mdelay(1);
+		}
+
+		pr_info("[CAM]  %s  ON STEP  start\n", __func__);
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  ON STEP 1  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(400, 0); /* 20110705 shuji test VCM step for vibration issue */
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  ON STEP 2  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(500, 0); /* down side hit point */
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  ON STEP 3  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(600, 0); /* up side hit point */
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  ON STEP 4  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(700, 0);
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  ON STEP 5  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(800, 0);
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  ON STEP 6  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(900, 0);
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  ON STEP 7  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(1000, 0);
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  ON STEP 8  camera_running is running\n", __func__);
+			vcm_on = 0;
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(1023, 0); /* 21ms */
+		}
+
+		pr_info("[CAM]  %s  ON STEP end\n", __func__);
+
+	} else if (on_off == 0 && vcm_on == 1) {
+		vcm_on = 0;
+
+		pr_info("[CAM]  %s  OFF STEP start\n", __func__);
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  s5k3h2yx_vreg_enable()  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			s5k3h2yx_vreg_enable(s5k3h2yx_pdev);
+			mdelay(1);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  camera_gpio_on()  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			sinfo = s5k3h2yx_pdev->dev.platform_data;
+			sinfo->pdata->camera_gpio_on();
+			mdelay(1);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  gpio_vcm_pwd ON  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			gpio_set_value(g_gpio_vcm_pwd, 1);
+			mdelay(1);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  OFF STEP 1  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(500, 0); /* up: no ; down: no */
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  OFF STEP 2  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(400, 0); /* up: hit ; down: no (up hit point) */
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  OFF STEP 3  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(300, 0); /* up: hit ; down: no */
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  OFF STEP 4  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(200, 0); /* up: hit ; down: hit (down hit point) */
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  OFF STEP 5  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(100, 0);
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  OFF STEP 6  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(50, 0);
+			mdelay(3);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  OFF STEP 7  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			s5k3h2yx_go_to_position(0, 0);  /* 21ms */
+			mdelay(3);
+		}
+
+		pr_info("[CAM]  %s  OFF STEP end\n", __func__);
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  gpio_vcm_pwd OFF  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			gpio_set_value(g_gpio_vcm_pwd, 0);
+			mdelay(1);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  camera_gpio_off()  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			sinfo = s5k3h2yx_pdev->dev.platform_data;
+			sinfo->pdata->camera_gpio_off();
+			mdelay(1);
+		}
+
+		if (vcm_workaround_get_camera_running() == 1) {
+			pr_info("[CAM]  %s  s5k3h2yx_vreg_disable()  camera_running is running\n", __func__);
+			return 0;
+		} else {
+			s5k3h2yx_vreg_disable(s5k3h2yx_pdev);
+		}
+	}
+
+	return 0;
+}
+/**********************************************************************************/
+#endif
 
 static int s5k3h2yx_sensor_release(void)
 {

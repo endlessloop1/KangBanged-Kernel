@@ -232,8 +232,6 @@ void mdp4_fetch_cfg(uint32 core_clk)
 	/* dma_e fetch config */
 	outpdw(MDP_BASE + 0xB1004, dmap_data);
 
-	outpdw(MDP_BASE + 0x404, 0x0155000);
-
 	/*
 	 * set up two vg pipes and two rgb pipes
 	 */
@@ -394,7 +392,7 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 			outpdw(MDP_BASE + 0x9501c, INTR_HIST_DONE);
 			if (mdp_is_hist_start == TRUE) {
 				MDP_OUTP(MDP_BASE + 0x95004,
-						mdp_hist_frame_cnt);
+						mdp_hist.frame_cnt);
 				MDP_OUTP(MDP_BASE + 0x95000, 1);
 			}
 		}
@@ -410,19 +408,11 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 
 		panel = mdp4_overlay_panel_list();
 		if (isr & INTR_PRIMARY_VSYNC) {
-			mdp_intr_mask &= ~INTR_PRIMARY_VSYNC;
-			outp32(MDP_INTR_ENABLE, mdp_intr_mask);
 			if (panel & MDP4_PANEL_LCDC)
 				mdp4_primary_vsync_lcdc();
-#ifdef CONFIG_FB_MSM_MIPI_DSI
-			else if (panel & MDP4_PANEL_DSI_VIDEO)
-				mdp4_primary_vsync_dsi_video();
-#endif
 		}
 #ifdef CONFIG_FB_MSM_DTV
 		if (isr & INTR_EXTERNAL_VSYNC) {
-			mdp_intr_mask &= ~INTR_EXTERNAL_VSYNC;
-			outp32(MDP_INTR_ENABLE, mdp_intr_mask);
 			if (panel & MDP4_PANEL_DTV)
 				mdp4_external_vsync_dtv();
 		}
@@ -437,14 +427,6 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 				outp32(MDP_INTR_ENABLE, mdp_intr_mask);
 				dma->waiting = FALSE;
 				spin_unlock(&mdp_spin_lock);
-			} else if (panel & MDP4_PANEL_DSI_VIDEO) {
-				/* disable LCDC interrupt */
-				spin_lock(&mdp_spin_lock);
-				mdp_intr_mask &= ~INTR_DMA_P_DONE;
-				outp32(MDP_INTR_ENABLE, mdp_intr_mask);
-				dma->waiting = FALSE;
-				mdp4_dmap_done_dsi_video();
-				spin_unlock(&mdp_spin_lock);
 			} else { /* MDDI */
 #ifdef CONFIG_FB_MSM_OVERLAY
 #ifdef CONFIG_FB_MSM_MIPI_DSI
@@ -453,9 +435,9 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 			spin_lock(&mdp_spin_lock);
 			dma->busy = FALSE;
 			spin_unlock(&mdp_spin_lock);
-			mdp4_dma_p_done_mddi();
-			mdp_pipe_ctrl(MDP_DMA2_BLOCK,
-			MDP_BLOCK_POWER_OFF, TRUE);
+            mdp4_dma_p_done_mddi();
+            mdp_pipe_ctrl(MDP_DMA2_BLOCK,
+            MDP_BLOCK_POWER_OFF, TRUE);
 #endif
 #endif
 			}
@@ -514,8 +496,9 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 #endif
 			}
 #ifdef CONFIG_FB_MSM_MIPI_DSI
-			else if (panel & MDP4_PANEL_DSI_CMD)
+			else if (panel & MDP4_PANEL_DSI_CMD) {
 				mdp4_overlay0_done_dsi_cmd(dma);
+			}
 #endif
 #ifdef CONFIG_FB_MSM_MDDI
 			else {	/* MDDI */
@@ -556,16 +539,22 @@ irqreturn_t mdp4_isr(int irq, void *ptr)
 			isr = inpdw(MDP_DMA_P_HIST_INTR_STATUS);
 			mask = inpdw(MDP_DMA_P_HIST_INTR_ENABLE);
 			outpdw(MDP_DMA_P_HIST_INTR_CLEAR, isr);
-			mb();
 			isr &= mask;
 			if (isr & INTR_HIST_DONE) {
-				if (waitqueue_active(&(mdp_hist_comp.wait))) {
-					complete(&mdp_hist_comp);
-				} else {
-					if (mdp_is_hist_start == TRUE) {
-					    MDP_OUTP(MDP_BASE + 0x95004, mdp_hist_frame_cnt);
-					    MDP_OUTP(MDP_BASE + 0x95000, 1);
-					}
+				if (mdp_hist.r)
+					memcpy(mdp_hist.r, MDP_BASE + 0x95100,
+							mdp_hist.bin_cnt*4);
+				if (mdp_hist.g)
+					memcpy(mdp_hist.g, MDP_BASE + 0x95200,
+							mdp_hist.bin_cnt*4);
+				if (mdp_hist.b)
+					memcpy(mdp_hist.b, MDP_BASE + 0x95300,
+						mdp_hist.bin_cnt*4);
+				complete(&mdp_hist_comp);
+				if (mdp_is_hist_start == TRUE) {
+					MDP_OUTP(MDP_BASE + 0x95004,
+							mdp_hist.frame_cnt);
+					MDP_OUTP(MDP_BASE + 0x95000, 1);
 				}
 			}
 		}
@@ -2045,19 +2034,4 @@ void mdp4_rgb_igc_lut_setup(int num)
 uint32 mdp4_rgb_igc_lut_cvt(uint32 ndx)
 {
 	return igc_rgb_lut[ndx & 0x0ff];
-}
-void mdp4_set_limit_range(bool set_limit_range)
-{
-	uint32 normal_range =0xFF0000;
-	uint32 limit_range = 0xEB0010;
-
-	if(set_limit_range) {
-		outpdw(MDP_BASE + 0xB0070, limit_range);
-		outpdw(MDP_BASE + 0xB0074, limit_range);
-		outpdw(MDP_BASE + 0xB0078, limit_range);
-	} else {
-		outpdw(MDP_BASE + 0xB0070, normal_range);
-		outpdw(MDP_BASE + 0xB0074, normal_range);
-		outpdw(MDP_BASE + 0xB0078, normal_range);
-	}
 }

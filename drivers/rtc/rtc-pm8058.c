@@ -37,10 +37,6 @@
 #define PM8058_RTC_WRITE_BASE	0x1EA
 #define PM8058_RTC_ALARM_BASE	0x1F2
 
-#ifdef CONFIG_BUILD_CIQ
-#define TIMEREMOTE_PROCEEDURE_GET_MILLISECOND_TICK	100
-#endif
-
 #define APP_RTC_PROG			0x30000048
 #define APP_RTC_VER			0x00040000
 #define TIMEREMOTE_PROCEEDURE_SET_JULIAN	6
@@ -62,8 +58,12 @@ struct rpc_time_julian {
 	uint32_t day_of_week;
 };
 
+/*        VERDI_LTE not support 8k modem. Disable this*/
+#ifdef CONFIG_MACH_VERDI_LTE
+#else
 static struct msm_rpc_endpoint *ep;
 static struct mutex rpc_setup_lock;
+#endif
 #ifdef CONFIG_MACH_HOLIDAY
 int rtc_debug_flag = 0;
 #endif
@@ -108,6 +108,9 @@ pm8058_rtc_write_bytes(struct pm8058_rtc *rtc_dd, u8 *rtc_val, int base)
 	return 0;
 }
 
+/*        VERDI_LTE not support 8k modem. Disable this*/
+#ifdef CONFIG_MACH_VERDI_LTE
+#else
 static int
 pm8058_init_rpc(void)
 {
@@ -116,7 +119,7 @@ pm8058_init_rpc(void)
 	if (!ep || (IS_ERR(ep))) {
 		ep = msm_rpc_connect_compatible(APP_RTC_PROG, APP_RTC_VER, 0);
 		if (IS_ERR(ep)) {
-			pr_err("%s: init rpc failed! rc = %ld\n", __func__, PTR_ERR(ep));
+			pr_info("%s: init rpc failed! rc = %ld\n", __func__, PTR_ERR(ep));
 			rc = -EIO;
 		}
 	}
@@ -189,6 +192,7 @@ static int rtc_connect_to_mdm(void * arg)
 	kfree(tm);
 	return 0;
 }
+#endif
 /*
  * Steps to write the RTC registers.
  * 1. Disable alarm if enabled.
@@ -204,7 +208,10 @@ pm8058_rtc0_set_time(struct device *dev, struct rtc_time *tm)
 	unsigned long secs = 0;
 	u8 value[4], reg = 0, alarm_enabled = 0, ctrl_reg = 0, i;
 	struct pm8058_rtc *rtc_dd = dev_get_drvdata(dev);
+#ifdef CONFIG_MACH_VERDI_LTE
+#else
 	struct rtc_time * rtc_t;
+#endif
 
 
 	rtc_tm_to_time(tm, &secs);
@@ -259,9 +266,13 @@ pm8058_rtc0_set_time(struct device *dev, struct rtc_time *tm)
 		return rc;
 	}
 
+/*        VERDI_LTE not support 8k modem. Disable this*/
+#ifdef CONFIG_MACH_VERDI_LTE
+#else
 	rtc_t = kmalloc(sizeof(struct rtc_time),GFP_KERNEL);
 	memcpy(rtc_t, tm, sizeof(struct rtc_time));
 	kthread_run(rtc_connect_to_mdm, rtc_t, "update_rtc_to_8kmodem");
+#endif
 
 	if (alarm_enabled) {
 		ctrl_reg |= PM8058_RTC_ALARM_ENABLE;
@@ -419,54 +430,10 @@ pm8058_rtc0_read_alarm(struct device *dev, struct rtc_wkalrm *alarm)
 	return 0;
 }
 
-#ifdef CONFIG_BUILD_CIQ
-static int
-pm8058_timeremote_read_ticks(struct device *dev, struct timespec *ticks)
-{
-	int rc;
-	int64_t get_ticks;
-
-	struct timeremote_get_xtal_ticks_req {
-		struct rpc_request_hdr hdr;
-		uint32_t julian_time_not_null;
-	} req;
-
-	struct timeremote_get_xtal_ticks_rep {
-		struct rpc_reply_hdr hdr;
-		uint32_t sync_ticks;
-	} rep;
-
-	if ((rc = pm8058_init_rpc()) < 0)
-		return rc;
-
-	req.julian_time_not_null = cpu_to_be32(1);
-
-	rc = msm_rpc_call_reply(ep, TIMEREMOTE_PROCEEDURE_GET_MILLISECOND_TICK,
-				&req, sizeof(req),
-				&rep, sizeof(rep),
-				5 * HZ);
-	if (rc < 0){
-		pr_err("%s: read tick fail\n", __func__);
-		return rc;
-	}
-
-	get_ticks = be32_to_cpu(rep.sync_ticks);
-	*ticks = ns_to_timespec(get_ticks*NSEC_PER_MSEC);
-
-	pr_debug("%s ticks to ns: %lld\n",
-			__func__, timespec_to_ns(ticks));
-
-	return 0;
-}
-#endif
-
 static struct rtc_class_ops pm8058_rtc0_ops = {
 	.read_time	= pm8058_rtc0_read_time,
 	.set_alarm	= pm8058_rtc0_set_alarm,
 	.read_alarm	= pm8058_rtc0_read_alarm,
-#ifdef CONFIG_BUILD_CIQ
-	.read_ticks	= pm8058_timeremote_read_ticks,
-#endif
 };
 
 static irqreturn_t pm8058_alarm_trigger(int irq, void *dev_id)
@@ -629,7 +596,11 @@ static struct platform_driver pm8058_rtc_driver = {
 
 static int __init pm8058_rtc_init(void)
 {
+/*        VERDI_LTE not support 8k modem. Disable this*/
+#ifdef CONFIG_MACH_VERDI_LTE
+#else
 	mutex_init(&rpc_setup_lock);
+#endif
 
 	return platform_driver_register(&pm8058_rtc_driver);
 }

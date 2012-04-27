@@ -280,7 +280,7 @@ struct freq_attr {
 
 #define cpufreq_freq_attr_ro(_name)		\
 static struct freq_attr _name =			\
-__ATTR(_name, 0440, show_##_name, NULL)
+__ATTR(_name, 0444, show_##_name, NULL)
 
 #define cpufreq_freq_attr_ro_perm(_name, _perm)	\
 static struct freq_attr _name =			\
@@ -292,7 +292,7 @@ __ATTR(_name, 0444, show_##_name##_old, NULL)
 
 #define cpufreq_freq_attr_rw(_name)		\
 static struct freq_attr _name =			\
-__ATTR(_name, 0640, show_##_name, store_##_name)
+__ATTR(_name, 0644, show_##_name, store_##_name)
 
 #define cpufreq_freq_attr_rw_old(_name)		\
 static struct freq_attr _name##_old =		\
@@ -369,9 +369,15 @@ extern struct cpufreq_governor cpufreq_gov_ondemand;
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_CONSERVATIVE)
 extern struct cpufreq_governor cpufreq_gov_conservative;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_conservative)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_LAGFREE)
+extern struct cpufreq_governor cpufreq_gov_lagfree;
+#define CPUFREQ_DEFAULT_GOVERNOR        (&cpufreq_gov_lagfree)
 #elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_INTERACTIVE)
 extern struct cpufreq_governor cpufreq_gov_interactive;
 #define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_interactive)
+#elif defined(CONFIG_CPU_FREQ_DEFAULT_GOV_SMARTASS2)
+extern struct cpufreq_governor cpufreq_gov_smartass2;
+#define CPUFREQ_DEFAULT_GOVERNOR	(&cpufreq_gov_smartass2)
 #endif
 
 
